@@ -203,7 +203,7 @@ fig.update_traces(
 st.plotly_chart(fig, use_container_width=True)
 
 # =========================
-# Sales by Customer Segment (Stacked Bar)
+# Sales by Customer Segment
 # =========================
 st.markdown("---")
 st.header("Sales by Customer Segment")
@@ -791,7 +791,7 @@ with c4:
 
 
 # =====================================================
-# Additional Actionable Insights (Stability & Coverage)
+# Additional Actionable Insights
 # =====================================================
 st.markdown("---")
 st.header("Additional Actionable Insights")
