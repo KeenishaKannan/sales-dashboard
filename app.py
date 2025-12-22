@@ -278,7 +278,7 @@ else:
     st.plotly_chart(fig, use_container_width=True)
 
 # =========================
-# Items & Customers Trend (Side by Side)
+# Items & Customers Trend
 # =========================
 st.markdown("---")
 
