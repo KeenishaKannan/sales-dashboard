@@ -5,8 +5,8 @@ import plotly.express as px
 from pathlib import Path
 import re
 
-st.set_page_config(page_title="Sales Trend Analysis Dashboard - for CAL", layout="wide")
-st.title("Sales Trend Analysis Dashboard - for CAL")
+st.set_page_config(page_title="CAL Sales Trend Analysis Dashboard", layout="wide")
+st.title("CAL Sales Trend Analysis Dashboard")
 
 EXCEL_FILE = "CAL Sales Data for Dashboard.xlsx"
 
