@@ -920,5 +920,3 @@ with c2:
         yaxis_title="",
     )
     st.plotly_chart(fig, use_container_width=True)
-
-st.caption("💡 Lower CV% = more predictable demand. Higher CV% = more seasonal/unstable.")
