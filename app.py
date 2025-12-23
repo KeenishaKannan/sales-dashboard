@@ -869,6 +869,7 @@ c1, c2 = st.columns(2)
 
 with c1:
     st.markdown("✅ **Stable Demand (Low Variance)**")
+    st.caption("💡 Lower CV% = more predictable demand.")
     fig = px.bar(
         stable_items.sort_values("CV_Pct_disp"),
         x="CV_Pct_disp",
@@ -895,6 +896,7 @@ with c1:
 
 with c2:
     st.markdown("⚠️ **Highly Seasonal / Risky (High Variance)**")
+    st.caption("💡 Higher CV% = more seasonal/unstable.")
     fig = px.bar(
         risky_items.sort_values("CV_Pct_disp"),
         x="CV_Pct_disp",
