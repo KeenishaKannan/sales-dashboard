@@ -115,7 +115,7 @@ c_items, c_customers = st.columns(2)
 
 # -------- Items --------
 with c_items:
-    st.subheader("Based on Items")
+    st.subheader("Trend Analysis of Items Based on Sales Amount")
     st.caption("💡 Shows the total monthly sales amount (MYR) summed across all items to track overall sales performance over time.")
 
 
@@ -143,7 +143,7 @@ with c_items:
 
 # -------- Customers --------
 with c_customers:
-    st.subheader("Based on Customers")
+    st.subheader("Trend Analysis of Customers Based on Items Sold")
     st.caption("💡 Shows the total monthly quantity sold summed across all customers to track overall demand volume over time")
 
 
