@@ -567,7 +567,7 @@ def _compute_mom_stats(df, entity_col, value_col="Value", months_window=6, cap_p
       - vol_mom_window (std dev of MoM% over the window)
       - avg_value_window (avg monthly value over the window)
     INSIGHTS rules:
-      - ignore MoM where previous month value is too small (prevents huge spikes)
+      - ignore MoM where previous month value is too small 
       - cap MoM% to +/- cap_pct for readability
     """
     d = df.copy()
@@ -806,7 +806,7 @@ with c2:
 
 
 # =========================
-# Item Sales Distribution (Histogram + Bell Curve)
+# Item Sales Distribution 
 # =========================
 st.markdown("---")
 st.header("Item Sales Distribution (Histogram + Bell Curve)")
