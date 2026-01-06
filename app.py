@@ -169,13 +169,91 @@ with c_customers:
 
     st.plotly_chart(fig_cust, use_container_width=True)
 
+# =========================
+# Year-to-Year Sales Comparison 
+# =========================
+st.markdown("---")
+st.header("Year-to-Year Sales Comparison")
+
+metric = st.radio(
+    "Select metric",
+    ["Sales Amount (MYR)", "Quantity Sold"],
+    horizontal=True,
+)
+
+base_df = items_df if metric == "Sales Amount (MYR)" else customers_df
+
+df_yoy = base_df.copy()
+df_yoy["Date"] = pd.to_datetime(df_yoy["Date"])
+df_yoy["Year"] = df_yoy["Date"].dt.year
+df_yoy["MonthNum"] = df_yoy["Date"].dt.month
+df_yoy["Month"] = df_yoy["Date"].dt.strftime("%b")
+
+years = sorted(df_yoy["Year"].unique())
+year_range = st.slider(
+    "Select year range",
+    min_value=int(min(years)),
+    max_value=int(max(years)),
+    value=(int(min(years)), int(max(years))),
+    step=1
+)
+
+df_yoy = df_yoy[
+    (df_yoy["Year"] >= year_range[0]) &
+    (df_yoy["Year"] <= year_range[1])
+]
+
+yoy_df = (
+    df_yoy
+    .groupby(["Year", "MonthNum", "Month"], as_index=False)["Value"]
+    .sum()
+)
+
+month_order = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+yoy_df["Month"] = pd.Categorical(yoy_df["Month"], categories=month_order, ordered=True)
+yoy_df = yoy_df.sort_values(["Year", "MonthNum"])
+
+fig = px.line(
+    yoy_df,
+    x="Month",
+    y="Value",
+    color="Year",
+    markers=True,
+    labels={
+        "Value": metric,
+        "Month": "Month",
+        "Year": "Year",
+    },
+)
+
+fig.update_traces(
+    hovertemplate=
+    "Year=%{customdata}<br>"
+    "Month=%{x}<br>"
+    f"{metric}=%{{y:,.0f}}<extra></extra>",
+    customdata=yoy_df["Year"]
+)
+
+fig.update_layout(
+    template="plotly_white",
+    xaxis=dict(categoryorder="array", categoryarray=month_order),
+    yaxis_title=metric,
+    hovermode="x unified",
+    height=520
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
 
 # =========================
 # Stacked Area – Items
 # =========================
 st.markdown("---")
 st.header("Sales Change by Month – Items")
-st.caption("💡Shows how total monthly sales (MYR) change over time, broken down by key items, to highlight which items are driving overall sales growth or decline.")
+st.caption(
+    "💡Shows how total monthly sales (MYR) change over time, broken down by key items, "
+    "to highlight which items are driving overall sales growth or decline."
+)
 
 top_items = (
     items_df.groupby("Series")["Value"]
@@ -195,12 +273,147 @@ stack_items = (
     .reset_index()
 )
 
-fig = px.area(stack_items, x="Date", y="Value", color="Group",
-              labels={"Value": "Sales Amount (MYR)"})
+group_order = [
+    g for g in top_items if g != "Others"
+] + ["Others"]
+
+color_map = {
+    "Strawberry": "pink",
+    "Sweet Corn": "yellow",
+    "Tomato": "red",
+    "Others": "gray",
+}
+
+fig = px.area(
+    stack_items,
+    x="Date",
+    y="Value",
+    color="Group",
+    labels={"Value": "Sales Amount (MYR)"},
+    category_orders={"Group": group_order},
+    color_discrete_map=color_map,
+)
+
 fig.update_traces(
     hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
 )
+
 st.plotly_chart(fig, use_container_width=True)
+
+# =========================
+# Pie Charts: Sales by Month 
+# =========================
+st.markdown("---")
+st.header("Pie Chart of Monthly Sales Breakdown")
+st.caption("💡 Select a month to view the breakdown for Items (MYR) and Customers (Quantity Sold).")
+
+
+items_df["Date"] = pd.to_datetime(items_df["Date"])
+customers_df["Date"] = pd.to_datetime(customers_df["Date"])
+
+all_months = sorted(
+    set(items_df["Date"].dt.to_period("M")).union(set(customers_df["Date"].dt.to_period("M")))
+)
+month_labels = [m.to_timestamp().strftime("%b %Y") for m in all_months]
+
+selected_month_label = st.selectbox(
+    "Select month",
+    month_labels,
+    index=len(month_labels) - 1 if len(month_labels) else 0,
+    key="pie_month_select"
+)
+selected_month = pd.to_datetime(selected_month_label, format="%b %Y").to_period("M")
+
+# --- Control how many slices to show ---
+TOP_N_ITEMS = 10
+TOP_N_CUSTOMERS = 10
+
+def top_n_with_others(df, name_col, value_col, top_n, others_label="Others"):
+    d = (
+        df.groupby(name_col, as_index=False)[value_col]
+        .sum()
+        .sort_values(value_col, ascending=False)
+        .reset_index(drop=True)
+    )
+    if len(d) <= top_n:
+        return d
+
+    top = d.iloc[:top_n].copy()
+    others_val = d.iloc[top_n:][value_col].sum()
+    others_row = pd.DataFrame([{name_col: others_label, value_col: others_val}])
+    out = pd.concat([top, others_row], ignore_index=True)
+
+   
+    out = out.sort_values(value_col, ascending=False).reset_index(drop=True)
+    return out
+
+c1, c2 = st.columns(2)
+
+# -------------------------
+# Pie 1: Sales Based on Items (MYR)
+# -------------------------
+with c1:
+    st.subheader("Sales Based on Items (MYR)")
+
+    items_m = items_df[items_df["Date"].dt.to_period("M") == selected_month].copy()
+    items_pie = top_n_with_others(items_m, "Series", "Value", TOP_N_ITEMS)
+
+    fig_items_pie = px.pie(
+        items_pie,
+        names="Series",
+        values="Value",
+    )
+
+    fig_items_pie.update_traces(
+        direction="clockwise",   
+        sort=False,              
+        rotation=0,              
+        textinfo="percent",
+        textposition="inside",
+        hovertemplate="Item=%{label}<br>Sales=%{value:,.0f} MYR<br>%{percent}<extra></extra>",
+    )
+
+    fig_items_pie.update_layout(
+        template="plotly_white",
+        height=520,
+        legend_title_text="Item",
+    )
+
+    st.plotly_chart(fig_items_pie, use_container_width=True)
+
+# -------------------------
+# Pie 2: Sales Based on Customers (Quantity Sold)
+# -------------------------
+with c2:
+    st.subheader("Sales Based on Customers (Quantity Sold)")
+
+    cust_m = customers_df[customers_df["Date"].dt.to_period("M") == selected_month].copy()
+    cust_pie = top_n_with_others(cust_m, "Series", "Value", TOP_N_CUSTOMERS)
+
+    fig_cust_pie = px.pie(
+        cust_pie,
+        names="Series",
+        values="Value",
+    )
+
+    fig_cust_pie.update_traces(
+        direction="clockwise",
+        sort=False,
+        rotation=0,
+        textinfo="percent",
+        textposition="inside",
+        hovertemplate="Customer=%{label}<br>Quantity=%{value:,.0f}<br>%{percent}<extra></extra>",
+    )
+
+    fig_cust_pie.update_layout(
+        template="plotly_white",
+        height=520,
+        legend_title_text="Customer",
+    )
+
+    st.plotly_chart(fig_cust_pie, use_container_width=True)
+
+
 
 # =========================
 # Sales by Customer Segment
@@ -210,7 +423,7 @@ st.header("Sales by Customer Segment")
 st.caption("💡 Shows the monthly sales breakdown (MYR) by customer segment, highlighting each segment’s contribution to total sales over time.")
 
 
-# Select the segment sheet
+
 segment_sheet = st.selectbox(
     "Select customer segment sheet",
     sheet_names,
@@ -336,122 +549,13 @@ with c_customers:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-
-# =========================
-# Heatmap: Items × Month 
-# =========================
-st.markdown("---")
-st.header("Items Heatmap (by sales amount MYR)")
-st.caption("💡 Items heatmap to show the sales of each item in MYR currency ")
-
-# Month-Year label  
-items_df["Month"] = items_df["Date"].dt.strftime("%b %Y")
-
-# Pivot Excel values
-items_pivot = (
-    items_df
-    .pivot_table(
-        index="Series",
-        columns="Month",
-        values="Value",
-        aggfunc="sum",
-        fill_value=0
-    )
-)
-
-items_pivot = items_pivot[sorted(items_pivot.columns, key=lambda x: pd.to_datetime(x, format="%b %Y"))]
-
-# SORT ITEMS: Highest selling → Lowest selling
-item_order = items_pivot.sum(axis=1).sort_values(ascending=False).index
-items_pivot = items_pivot.loc[item_order]
-
-items_pivot = items_pivot.round(0).astype(int)
-
-fig = px.imshow(
-    items_pivot,
-    color_continuous_scale="Greens",
-    aspect="auto",
-    labels=dict(
-        x="Month",
-        y="Item",
-        color="Value"
-    )
-)
-
-fig.update_layout(
-    height=len(items_pivot.index) * 26 + 200,
-    margin=dict(l=200, b=120),
-    coloraxis_colorbar=dict(
-        thickness=16,
-        len=0.7
-    )
-)
-
-fig.update_traces(
-    hovertemplate="Item=%{y}<br>Month=%{x}<br>Value=%{z:,}<extra></extra>"
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# =========================
-# Heatmap: Customers × Month 
-# =========================
-st.markdown("---")
-st.header("Customers Heatmap (by Quantity sold)")
-st.caption("💡 Customers heatmap to show the amount of quantity purchased by each customer over the months ")
-
-customers_df["Month"] = customers_df["Date"].dt.strftime("%b %Y")
-
-customers_pivot = (
-    customers_df
-    .pivot_table(
-        index="Series",
-        columns="Month",
-        values="Value",
-        aggfunc="sum",
-        fill_value=0
-    )
-)
-
-customers_pivot = customers_pivot[sorted(customers_pivot.columns, key=lambda x: pd.to_datetime(x, format="%b %Y"))]
-
-customers_pivot = customers_pivot.round(0).astype(int)
-
-fig = px.imshow(
-    customers_pivot,
-    color_continuous_scale="Blues",
-    aspect="auto",
-    labels=dict(
-        x="Month",
-        y="Customer",
-        color="Value"
-    )
-)
-
-fig.update_layout(
-    height=len(customers_pivot.index) * 26 + 200,
-    margin=dict(l=220, b=120),
-    coloraxis_colorbar=dict(
-        thickness=16,
-        len=0.7
-    )
-)
-
-fig.update_traces(
-    hovertemplate="Customer=%{y}<br>Month=%{x}<br>Value=%{z:,}<extra></extra>"
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-
-
 # =========================
 # Growth & Action Insights 
 # =========================
 st.markdown("---")
 st.header("Growth & Action Insights")
 
-import numpy as np  # REQUIRED for safe float NaNs
+import numpy as np 
 
 
 def _compute_mom_stats(df, entity_col, value_col="Value", months_window=6, cap_pct=300):
@@ -530,7 +634,6 @@ cust_stats = _compute_mom_stats(customers_df, entity_col="Series", value_col="Va
 
 # Layout (2x2)
 c1, c2 = st.columns(2)
-c3, c4 = st.columns(2)
 
 # -------------------------
 # Items With Rising Momentum
@@ -612,11 +715,22 @@ with c1:
 # -------------------------
 with c2:
     st.subheader("Customer Sales Growth Trends")
-    st.caption(" 💡 Customers categorized by improving, stable or declining sales patterns over time.")
+    st.caption("💡 Customers categorized by improving or declining sales patterns over time.")
 
-    # Monthly totals
+    months_window = st.radio(
+        "Select time window",
+        options=[3, 6, 12],
+        index=1,
+        horizontal=True,
+        key="customer_growth_window"
+    )
+
     d = customers_df.copy()
     d["Date"] = pd.to_datetime(d["Date"])
+
+    last_month = d["Date"].max()
+    start_month = (last_month - pd.DateOffset(months=months_window - 1)).replace(day=1)
+    d = d[d["Date"] >= start_month]
 
     monthly = (
         d.groupby(["Series", "Date"])["Value"]
@@ -625,7 +739,6 @@ with c2:
         .sort_values(["Series", "Date"])
     )
 
-    # Avg monthly absolute change
     def avg_monthly_change(x):
         return x["Value"].diff().mean()
 
@@ -636,7 +749,6 @@ with c2:
         .fillna(0)
     )
 
-    # Trend classification
     def trend_label(v):
         if v > 0:
             return "Improving"
@@ -646,12 +758,14 @@ with c2:
 
     cs["Trend"] = cs["Avg_Change"].apply(trend_label)
 
-    
+    cs = cs[cs["Trend"] != "Stable"]
+
     improving = cs[cs["Trend"] == "Improving"].sort_values("Avg_Change", ascending=False).head(6)
     declining = cs[cs["Trend"] == "Declining"].sort_values("Avg_Change").head(6)
-    stable = cs[cs["Trend"] == "Stable"].head(6)
 
-    show = pd.concat([declining, stable, improving]).sort_values("Avg_Change")
+    show = pd.concat([declining, improving]).sort_values("Avg_Change")
+
+    fig_height = max(360, len(show) * 45)
 
     fig = px.bar(
         show,
@@ -665,12 +779,10 @@ with c2:
         },
         color_discrete_map={
             "Improving": "#2563EB",
-            "Stable": "#93C5FD",
             "Declining": "#EF4444"
         }
     )
 
-    
     fig.update_traces(
         hovertemplate=
         "Customer=%{y}<br>"
@@ -680,115 +792,167 @@ with c2:
 
     fig.update_layout(
         template="plotly_white",
-        height=360,
+        height=fig_height,
         xaxis_title="Avg Monthly Sales Change (MYR)",
         yaxis_title="Customer",
-        legend_title_text="Trend"
+        legend_title_text="Trend",
+        yaxis=dict(
+            automargin=True,
+            tickmode="linear"
+        )
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
 
-# -------------------------
-# Network Performance Benchmark
-# -------------------------
-with c4:
-    st.subheader("Network Performance Benchmark")
-    st.caption("💡 Comparison of individual item performance against overall network averages.")
+# =========================
+# Item Sales Distribution (Histogram + Bell Curve)
+# =========================
+st.markdown("---")
+st.header("Item Sales Distribution (Histogram + Bell Curve)")
+st.caption(
+    "💡 For the selected year, shows how many items fall into each average-monthly-sales range (MYR). "
+    "Includes mean and median."
+)
 
-    bench = item_stats.copy()
+# --- Year select ---
+items_df["Year"] = items_df["Date"].dt.year
+available_years = sorted(items_df["Year"].dropna().unique().tolist())
 
-    
-    bench["Entity"] = bench["Entity"].astype(str).str.strip()
-    bench["AvgSales"] = (
-        pd.to_numeric(bench["avg_value_window"], errors="coerce")
-        .replace([np.inf, -np.inf], np.nan)
-        .fillna(0)
-        .round(0)
+selected_year = st.selectbox(
+    "Select year",
+    available_years,
+    index=len(available_years) - 1 if available_years else 0,
+    key="hist_bell_year"
+)
+
+
+d = items_df[
+    (items_df["Year"] == selected_year) &
+    (items_df["Series"].str.lower() != "others")
+].copy()
+
+d["Date"] = pd.to_datetime(d["Date"])
+
+monthly_item = (
+    d.groupby(["Series", "Date"], as_index=False)["Value"]
+    .sum()
+)
+
+item_avg = (
+    monthly_item.groupby("Series", as_index=False)["Value"]
+    .mean()
+    .rename(columns={"Value": "AvgMonthlySales"})
+)
+
+vals = item_avg["AvgMonthlySales"].dropna().astype(float).values
+
+if len(vals) < 3:
+    st.warning("Not enough data to plot distribution for this year.")
+else:
+    import numpy as np
+    import plotly.graph_objects as go
+
+    bins = 15
+
+    counts, edges = np.histogram(vals, bins=bins)
+    bin_centers = (edges[:-1] + edges[1:]) / 2
+    bin_width = edges[1] - edges[0]
+
+    mu = float(np.mean(vals))
+    sigma = float(np.std(vals, ddof=0)) if float(np.std(vals, ddof=0)) > 0 else 1.0
+    median = float(np.median(vals))
+
+    x = np.linspace(edges[0], edges[-1], 400)
+    pdf = (1.0 / (sigma * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mu) / sigma) ** 2)
+    bell_y = pdf * len(vals) * bin_width
+
+    fig = go.Figure()
+
+    # Histogram
+    fig.add_trace(
+        go.Bar(
+            x=bin_centers,
+            y=counts,
+            width=bin_width * 0.9,
+            name="Number of items",
+            hovertemplate=
+            "Avg monthly sales ≈ %{x:,.0f} MYR<br>"
+            "Items in this range = %{y}<extra></extra>"
+        )
     )
 
-    # Network average
-    network_avg = bench["AvgSales"].mean()
-
-    bench["Performance"] = np.where(
-        bench["AvgSales"] >= network_avg,
-        "Above Network Avg",
-        "Below Network Avg"
+    # Bell curve
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=bell_y,
+            mode="lines",
+            name="Overall distribution trend",
+            hovertemplate="Sales = %{x:,.0f} MYR<extra></extra>"
+        )
     )
 
-    
-    top = bench.sort_values("AvgSales", ascending=False).head(10)
-    bottom = bench.sort_values("AvgSales", ascending=True).head(10)
-
-    strawberry = bench[bench["Entity"].str.lower() == "strawberry"]
-
-    bench_show = (
-        pd.concat([top, bottom, strawberry], ignore_index=True)
-        .drop_duplicates("Entity")
-        .sort_values("AvgSales", ascending=False)
-        .head(17)               
-        .sort_values("AvgSales")  
-        .reset_index(drop=True)
-    )
-
-    fig = px.scatter(
-        bench_show,
-        x="AvgSales",
-        y="Entity",
-        color="Performance",
-        labels={
-            "Entity": "Item",
-            "AvgSales": "Average Monthly Sales (MYR)"
-        },
-        category_orders={
-            "Performance": ["Below Network Avg", "Above Network Avg"]
-        },
-        color_discrete_map={
-            "Above Network Avg": "#60A5FA",
-            "Below Network Avg": "#2563EB"
-        }
-    )
-
-    
-    fig.update_xaxes(
-        range=[0, bench_show["AvgSales"].max() * 1.1],
-        tickformat=","
-    )
-
-    
-    fig.update_yaxes(
-        categoryorder="array",
-        categoryarray=bench_show["Entity"].tolist(),
-        automargin=True
-    )
-
-    fig.add_vline(
-        x=network_avg,
-        line_dash="dash",
-        annotation_text="Network Avg",
-        annotation_position="top"
-    )
-
-    
-    fig.update_traces(
-        hovertemplate=
-        "Item=%{y}<br>"
-        "Avg Monthly Sales=%{x:,.0f} MYR"
-        "<extra></extra>"
-    )
+    # Mean & Median lines
+    fig.add_vline(x=mu, line_dash="dash", annotation_text="Mean", annotation_position="top")
+    fig.add_vline(x=median, line_dash="dot", annotation_text="Median", annotation_position="top")
 
     fig.update_layout(
         template="plotly_white",
-        height=420,
-        margin=dict(l=220, r=20, t=20, b=20),
-        xaxis_title="Average Monthly Sales (MYR)",
-        yaxis_title="Item",
-        legend_title_text="Performance vs Network"
+        height=520,
+        xaxis_title="Average Monthly Sales per Item (MYR)",
+        yaxis_title="Number of Items",
+        legend_title_text=""
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
+# -------------------------
+# Tables (Top / Bottom)
+# -------------------------
+item_avg["AvgMonthlySales"] = item_avg["AvgMonthlySales"].round(0).astype(int)
 
+c1, c2 = st.columns(2)
+
+with c1:
+    st.subheader("Top 10 items (highest avg monthly sales)")
+    top10 = (
+        item_avg.sort_values("AvgMonthlySales", ascending=False)
+        .head(10)
+        .reset_index(drop=True)
+    )
+    top10.index = top10.index + 1  # start from 1
+    st.dataframe(top10, use_container_width=True)
+
+with c2:
+    st.subheader("Bottom 10 items (lowest avg monthly sales)")
+    bottom10 = (
+        item_avg.sort_values("AvgMonthlySales", ascending=True)
+        .head(10)
+        .reset_index(drop=True)
+    )
+    bottom10.index = bottom10.index + 1  # start from 1
+    st.dataframe(bottom10, use_container_width=True)
+
+# -------------------------
+# Summary metrics
+# -------------------------
+st.markdown("### 📊 Distribution Summary")
+
+total_items = len(item_avg)
+high_seller_threshold = 100_000  # MYR per month
+high_sellers = (item_avg["AvgMonthlySales"] >= high_seller_threshold).sum()
+
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric("Total Items", int(total_items))
+c2.metric("Median Avg Monthly Sales (MYR)", f"{int(median):,}")
+c3.metric("Mean Avg Monthly Sales (MYR)", f"{int(mu):,}")
+c4.metric(
+    "High-Selling Items",
+    int(high_sellers),
+    help=f"Items with ≥ {high_seller_threshold:,} MYR average monthly sales"
+)
 
 # =====================================================
 # Additional Actionable Insights
