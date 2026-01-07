@@ -459,11 +459,11 @@ else:
 
     # --- Color mapping ---
     segment_colors = {
-        "CAI": "#E53935",   # red
-        "OTH": "#9E9E9E",   # grey
-        "HRC": "#1E3A8A",   # dark blue
-        "DST": "#90CAF9",   # keep light blue
-        "RTL": "#26A69A"    # keep teal/green
+        "CAI": "#E53935",  
+        "OTH": "#9E9E9E",   
+        "HRC": "#1E3A8A",  
+        "DST": "#90CAF9",   
+        "RTL": "#26A69A"    
     }
 
     # --- Stacked bar chart ---
@@ -957,8 +957,8 @@ high_sellers = (item_avg["AvgMonthlySales"] >= high_seller_threshold).sum()
 c1, c2, c3, c4 = st.columns(4)
 
 c1.metric("Total Items", int(total_items))
-c2.metric("Median Avg Monthly Sales (MYR)", f"{int(median):,}")
-c3.metric("Mean Avg Monthly Sales (MYR)", f"{int(mu):,}")
+c2.metric("Median Avg Monthly Sales (MYR) per item", f"{int(median):,}")
+c3.metric("Mean Avg Monthly Sales (MYR) per item", f"{int(mu):,}")
 c4.metric(
     "High-Selling Items",
     int(high_sellers),
