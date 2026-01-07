@@ -824,7 +824,136 @@ with c2:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+# =====================================================
+# Additional Actionable Insights
+# =====================================================
+st.markdown("---")
+st.header("Additional Actionable Insights")
 
+import numpy as np
+
+months_window = st.radio(
+    "Select time window",
+    options=[3, 6, 12],
+    index=1,
+    horizontal=True,
+    key="stability_window"
+)
+
+
+_items = items_df.copy()
+_items["Date"] = pd.to_datetime(_items["Date"])
+_customers = customers_df.copy()
+_customers["Date"] = pd.to_datetime(_customers["Date"])
+
+last_month_items = _items["Date"].max()
+start_month_items = (last_month_items - pd.DateOffset(months=months_window - 1)).replace(day=1)
+_items = _items[_items["Date"] >= start_month_items]
+
+last_month_cust = _customers["Date"].max()
+start_month_cust = (last_month_cust - pd.DateOffset(months=months_window - 1)).replace(day=1)
+_customers = _customers[_customers["Date"] >= start_month_cust]
+
+# =====================================================
+# 1) Item Demand Stability
+# =====================================================
+st.subheader("Item Demand Stability")
+
+item_monthly = (
+    _items.groupby(["Series", "Date"])["Value"]
+    .sum()
+    .reset_index()
+)
+
+item_stats = (
+    item_monthly.groupby("Series")["Value"]
+    .agg(mean="mean", std="std")
+    .reset_index()
+)
+
+item_stats["std"] = item_stats["std"].fillna(0)
+item_stats["CV_Pct"] = np.where(
+    item_stats["mean"] > 0,
+    (item_stats["std"] / item_stats["mean"]) * 100.0,
+    np.nan
+)
+
+# Stable = low CV, Risky = high CV 
+stable_items = item_stats.sort_values("CV_Pct", ascending=True).head(10).copy()
+risky_items = item_stats.sort_values("CV_Pct", ascending=False).head(10).copy()
+
+
+stable_items["CV_Pct_disp"] = (
+    stable_items["CV_Pct"]
+    .replace([np.inf, -np.inf], np.nan)
+    .fillna(0)
+    .round(0)
+    .astype(int)
+)
+
+risky_items["CV_Pct_disp"] = (
+    risky_items["CV_Pct"]
+    .replace([np.inf, -np.inf], np.nan)
+    .fillna(0)
+    .round(0)
+    .astype(int)
+)
+
+c1, c2 = st.columns(2)
+
+with c1:
+    st.markdown("✅ **Stable Demand (Low Variance)**")
+    st.caption("💡 Lower CV% = more predictable demand.")
+    fig = px.bar(
+        stable_items.sort_values("CV_Pct_disp"),
+        x="CV_Pct_disp",
+        y="Series",
+        orientation="h",
+        text="CV_Pct_disp",
+        labels={"Series": "Item", "CV_Pct_disp": "Stability Score (CV%)"},
+        color_discrete_sequence=["#22C55E"],  # green
+    )
+    fig.update_traces(
+        texttemplate="%{text}%",
+        textposition="outside",
+        hovertemplate="Item=%{y}<br>Stability (CV)=%{x:.0f}%<extra></extra>",
+    )
+    fig.update_layout(
+        template="plotly_white",
+        height=420,  
+        showlegend=False,
+        margin=dict(l=10, r=10, t=20, b=10),
+        xaxis_title="Stability Score (CV%)",
+        yaxis_title="",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+with c2:
+    st.markdown("⚠️ **Highly Seasonal / Risky (High Variance)**")
+    st.caption("💡 Higher CV% = more seasonal/unstable.")
+    fig = px.bar(
+        risky_items.sort_values("CV_Pct_disp"),
+        x="CV_Pct_disp",
+        y="Series",
+        orientation="h",
+        text="CV_Pct_disp",
+        labels={"Series": "Item", "CV_Pct_disp": "Risk Score (CV%)"},
+        color_discrete_sequence=["#F59E0B"],  # orange
+    )
+    fig.update_traces(
+        texttemplate="%{text}%",
+        textposition="outside",
+        hovertemplate="Item=%{y}<br>Risk (CV)=%{x:.0f}%<extra></extra>",
+    )
+    fig.update_layout(
+        template="plotly_white",
+        height=420,  
+        showlegend=False,
+        margin=dict(l=10, r=10, t=20, b=10),
+        xaxis_title="Risk Score (CV%)",
+        yaxis_title="",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 # =========================
 # Item Sales Distribution 
@@ -974,134 +1103,3 @@ c4.metric(
     int(high_sellers),
     help=f"Items with ≥ {high_seller_threshold:,} MYR average monthly sales"
 )
-
-# =====================================================
-# Additional Actionable Insights
-# =====================================================
-st.markdown("---")
-st.header("Additional Actionable Insights")
-
-import numpy as np
-
-months_window = st.radio(
-    "Select time window",
-    options=[3, 6, 12],
-    index=1,
-    horizontal=True,
-    key="stability_window"
-)
-
-
-_items = items_df.copy()
-_items["Date"] = pd.to_datetime(_items["Date"])
-_customers = customers_df.copy()
-_customers["Date"] = pd.to_datetime(_customers["Date"])
-
-last_month_items = _items["Date"].max()
-start_month_items = (last_month_items - pd.DateOffset(months=months_window - 1)).replace(day=1)
-_items = _items[_items["Date"] >= start_month_items]
-
-last_month_cust = _customers["Date"].max()
-start_month_cust = (last_month_cust - pd.DateOffset(months=months_window - 1)).replace(day=1)
-_customers = _customers[_customers["Date"] >= start_month_cust]
-
-# =====================================================
-# 1) Item Demand Stability
-# =====================================================
-st.subheader("Item Demand Stability")
-
-item_monthly = (
-    _items.groupby(["Series", "Date"])["Value"]
-    .sum()
-    .reset_index()
-)
-
-item_stats = (
-    item_monthly.groupby("Series")["Value"]
-    .agg(mean="mean", std="std")
-    .reset_index()
-)
-
-item_stats["std"] = item_stats["std"].fillna(0)
-item_stats["CV_Pct"] = np.where(
-    item_stats["mean"] > 0,
-    (item_stats["std"] / item_stats["mean"]) * 100.0,
-    np.nan
-)
-
-# Stable = low CV, Risky = high CV 
-stable_items = item_stats.sort_values("CV_Pct", ascending=True).head(10).copy()
-risky_items = item_stats.sort_values("CV_Pct", ascending=False).head(10).copy()
-
-
-stable_items["CV_Pct_disp"] = (
-    stable_items["CV_Pct"]
-    .replace([np.inf, -np.inf], np.nan)
-    .fillna(0)
-    .round(0)
-    .astype(int)
-)
-
-risky_items["CV_Pct_disp"] = (
-    risky_items["CV_Pct"]
-    .replace([np.inf, -np.inf], np.nan)
-    .fillna(0)
-    .round(0)
-    .astype(int)
-)
-
-c1, c2 = st.columns(2)
-
-with c1:
-    st.markdown("✅ **Stable Demand (Low Variance)**")
-    st.caption("💡 Lower CV% = more predictable demand.")
-    fig = px.bar(
-        stable_items.sort_values("CV_Pct_disp"),
-        x="CV_Pct_disp",
-        y="Series",
-        orientation="h",
-        text="CV_Pct_disp",
-        labels={"Series": "Item", "CV_Pct_disp": "Stability Score (CV%)"},
-        color_discrete_sequence=["#22C55E"],  # green
-    )
-    fig.update_traces(
-        texttemplate="%{text}%",
-        textposition="outside",
-        hovertemplate="Item=%{y}<br>Stability (CV)=%{x:.0f}%<extra></extra>",
-    )
-    fig.update_layout(
-        template="plotly_white",
-        height=420,  
-        showlegend=False,
-        margin=dict(l=10, r=10, t=20, b=10),
-        xaxis_title="Stability Score (CV%)",
-        yaxis_title="",
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-with c2:
-    st.markdown("⚠️ **Highly Seasonal / Risky (High Variance)**")
-    st.caption("💡 Higher CV% = more seasonal/unstable.")
-    fig = px.bar(
-        risky_items.sort_values("CV_Pct_disp"),
-        x="CV_Pct_disp",
-        y="Series",
-        orientation="h",
-        text="CV_Pct_disp",
-        labels={"Series": "Item", "CV_Pct_disp": "Risk Score (CV%)"},
-        color_discrete_sequence=["#F59E0B"],  # orange
-    )
-    fig.update_traces(
-        texttemplate="%{text}%",
-        textposition="outside",
-        hovertemplate="Item=%{y}<br>Risk (CV)=%{x:.0f}%<extra></extra>",
-    )
-    fig.update_layout(
-        template="plotly_white",
-        height=420,  
-        showlegend=False,
-        margin=dict(l=10, r=10, t=20, b=10),
-        xaxis_title="Risk Score (CV%)",
-        yaxis_title="",
-    )
-    st.plotly_chart(fig, use_container_width=True)
