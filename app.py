@@ -249,23 +249,27 @@ st.plotly_chart(fig, use_container_width=True)
 # =========================
 st.markdown("---")
 st.header("Pie Chart of Monthly Sales Breakdown")
-st.caption("💡 Select a month to view the breakdown for Items (MYR) and Customers (Quantity Sold).")
-
+st.caption(
+    "Select a month to view the breakdown for Items (MYR) and Customers (Quantity Sold)."
+)
 
 items_df["Date"] = pd.to_datetime(items_df["Date"])
 customers_df["Date"] = pd.to_datetime(customers_df["Date"])
 
 all_months = sorted(
-    set(items_df["Date"].dt.to_period("M")).union(set(customers_df["Date"].dt.to_period("M")))
+    set(items_df["Date"].dt.to_period("M"))
+    .union(set(customers_df["Date"].dt.to_period("M")))
 )
+
 month_labels = [m.to_timestamp().strftime("%b %Y") for m in all_months]
 
 selected_month_label = st.selectbox(
     "Select month",
     month_labels,
-    index=len(month_labels) - 1 if len(month_labels) else 0,
+    index=len(month_labels) - 1 if month_labels else 0,
     key="pie_month_select"
 )
+
 selected_month = pd.to_datetime(selected_month_label, format="%b %Y").to_period("M")
 
 # --- Control how many slices to show ---
@@ -279,17 +283,27 @@ def top_n_with_others(df, name_col, value_col, top_n, others_label="Others"):
         .sort_values(value_col, ascending=False)
         .reset_index(drop=True)
     )
+
     if len(d) <= top_n:
         return d
 
     top = d.iloc[:top_n].copy()
     others_val = d.iloc[top_n:][value_col].sum()
-    others_row = pd.DataFrame([{name_col: others_label, value_col: others_val}])
+
+    others_row = pd.DataFrame([
+        {name_col: others_label, value_col: others_val}
+    ])
+
     out = pd.concat([top, others_row], ignore_index=True)
 
-   
-    out = out.sort_values(value_col, ascending=False).reset_index(drop=True)
-    return out
+    # Force "Others" to the end
+    out[name_col] = pd.Categorical(
+        out[name_col],
+        categories=[*top[name_col].tolist(), others_label],
+        ordered=True
+    )
+
+    return out.sort_values(name_col).reset_index(drop=True)
 
 c1, c2 = st.columns(2)
 
@@ -302,19 +316,32 @@ with c1:
     items_m = items_df[items_df["Date"].dt.to_period("M") == selected_month].copy()
     items_pie = top_n_with_others(items_m, "Series", "Value", TOP_N_ITEMS)
 
+    item_names = items_pie["Series"].tolist()
+
+    item_colors = {
+        name: "#9E9E9E" if name == "Others" else None
+        for name in item_names
+    }
+
     fig_items_pie = px.pie(
         items_pie,
         names="Series",
         values="Value",
+        color="Series",
+        color_discrete_map=item_colors,
+        category_orders={"Series": item_names},
     )
 
     fig_items_pie.update_traces(
-        direction="clockwise",   
-        sort=False,              
-        rotation=0,              
+        direction="clockwise",
+        sort=False,
+        rotation=0,
         textinfo="percent",
         textposition="inside",
-        hovertemplate="Item=%{label}<br>Sales=%{value:,.0f} MYR<br>%{percent}<extra></extra>",
+        hovertemplate=
+        "Item=%{label}<br>"
+        "Sales=%{value:,.0f} MYR<br>"
+        "%{percent}<extra></extra>",
     )
 
     fig_items_pie.update_layout(
@@ -334,10 +361,20 @@ with c2:
     cust_m = customers_df[customers_df["Date"].dt.to_period("M") == selected_month].copy()
     cust_pie = top_n_with_others(cust_m, "Series", "Value", TOP_N_CUSTOMERS)
 
+    cust_names = cust_pie["Series"].tolist()
+
+    cust_colors = {
+        name: "#9E9E9E" if name == "Others" else None
+        for name in cust_names
+    }
+
     fig_cust_pie = px.pie(
         cust_pie,
         names="Series",
         values="Value",
+        color="Series",
+        color_discrete_map=cust_colors,
+        category_orders={"Series": cust_names},
     )
 
     fig_cust_pie.update_traces(
@@ -346,7 +383,10 @@ with c2:
         rotation=0,
         textinfo="percent",
         textposition="inside",
-        hovertemplate="Customer=%{label}<br>Quantity=%{value:,.0f}<br>%{percent}<extra></extra>",
+        hovertemplate=
+        "Customer=%{label}<br>"
+        "Quantity=%{value:,.0f}<br>"
+        "%{percent}<extra></extra>",
     )
 
     fig_cust_pie.update_layout(
@@ -358,11 +398,10 @@ with c2:
     st.plotly_chart(fig_cust_pie, use_container_width=True)
 
 
+
 # =========================
 # Sales Change by Month – Items
-# AND
 # Sales by Customer Segment
-# (Side-by-side layout)
 # =========================
 
 st.markdown("---")
@@ -370,7 +409,7 @@ st.markdown("---")
 col1, col2 = st.columns(2)
 
 # ======================================================
-# LEFT COLUMN: Sales Change by Month – Items
+#Sales Change by Month – Items
 # ======================================================
 with col1:
     st.header("Sales Change by Month – Items")
@@ -430,7 +469,7 @@ with col1:
 
 
 # ======================================================
-# RIGHT COLUMN: Sales by Customer Segment
+# Sales by Customer Segment
 # ======================================================
 with col2:
     st.header("Sales by Customer Segment")
@@ -470,11 +509,11 @@ with col2:
         )
 
         segment_colors = {
-            "CAI": "#E53935",   # red
-            "DST": "#90CAF9",   # light blue
-            "HRC": "#1E3A8A",   # dark blue
-            "RTL": "#26A69A",   # green
-            "OTH": "#9E9E9E"    # grey
+            "CAI": "#E53935",   
+            "DST": "#90CAF9",   
+            "HRC": "#1E3A8A",   
+            "RTL": "#26A69A",   
+            "OTH": "#9E9E9E"    
         }
 
         segment_order = ["CAI", "DST", "HRC", "RTL", "OTH"]
