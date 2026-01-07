@@ -457,6 +457,15 @@ else:
         .round(0)
     )
 
+    # --- Color mapping ---
+    segment_colors = {
+        "CAI": "#E53935",   # red
+        "OTH": "#9E9E9E",   # grey
+        "HRC": "#1E3A8A",   # dark blue
+        "DST": "#90CAF9",   # keep light blue
+        "RTL": "#26A69A"    # keep teal/green
+    }
+
     # --- Stacked bar chart ---
     fig = px.bar(
         segment_monthly,
@@ -464,6 +473,7 @@ else:
         y="Value",
         color="Segment",
         barmode="stack",
+        color_discrete_map=segment_colors,
         labels={
             "Value": "Sales (MYR)",
             "Date": "Month"
