@@ -459,12 +459,15 @@ else:
 
     # --- Color mapping ---
     segment_colors = {
-        "CAI": "#E53935",  
-        "OTH": "#9E9E9E",   
-        "HRC": "#1E3A8A",  
+        "CAI": "#E53935",   
         "DST": "#90CAF9",   
-        "RTL": "#26A69A"    
+        "HRC": "#1E3A8A",   
+        "RTL": "#26A69A",   
+        "OTH": "#9E9E9E"    
     }
+
+    # --- Explicit legend order (OTH last) ---
+    segment_order = ["CAI", "DST", "HRC", "RTL", "OTH"]
 
     # --- Stacked bar chart ---
     fig = px.bar(
@@ -474,6 +477,7 @@ else:
         color="Segment",
         barmode="stack",
         color_discrete_map=segment_colors,
+        category_orders={"Segment": segment_order},
         labels={
             "Value": "Sales (MYR)",
             "Date": "Month"
