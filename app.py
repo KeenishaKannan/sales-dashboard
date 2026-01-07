@@ -244,62 +244,6 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-
-# =========================
-# Stacked Area – Items
-# =========================
-st.markdown("---")
-st.header("Sales Change by Month – Items")
-st.caption(
-    "💡Shows how total monthly sales (MYR) change over time, broken down by key items, "
-    "to highlight which items are driving overall sales growth or decline."
-)
-
-top_items = (
-    items_df.groupby("Series")["Value"]
-    .sum()
-    .sort_values(ascending=False)
-    .head(5)
-    .index
-)
-
-items_df["Group"] = items_df["Series"].where(
-    items_df["Series"].isin(top_items), "Others"
-)
-
-stack_items = (
-    items_df.groupby(["Date", "Group"])["Value"]
-    .sum()
-    .reset_index()
-)
-
-group_order = [
-    g for g in top_items if g != "Others"
-] + ["Others"]
-
-color_map = {
-    "Strawberry": "pink",
-    "Sweet Corn": "yellow",
-    "Tomato": "red",
-    "Others": "gray",
-}
-
-fig = px.area(
-    stack_items,
-    x="Date",
-    y="Value",
-    color="Group",
-    labels={"Value": "Sales Amount (MYR)"},
-    category_orders={"Group": group_order},
-    color_discrete_map=color_map,
-)
-
-fig.update_traces(
-    hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
 # =========================
 # Pie Charts: Sales by Month 
 # =========================
@@ -413,6 +357,61 @@ with c2:
 
     st.plotly_chart(fig_cust_pie, use_container_width=True)
 
+
+# =========================
+# Stacked Area – Items
+# =========================
+st.markdown("---")
+st.header("Sales Change by Month – Items")
+st.caption(
+    "💡Shows how total monthly sales (MYR) change over time, broken down by key items, "
+    "to highlight which items are driving overall sales growth or decline."
+)
+
+top_items = (
+    items_df.groupby("Series")["Value"]
+    .sum()
+    .sort_values(ascending=False)
+    .head(5)
+    .index
+)
+
+items_df["Group"] = items_df["Series"].where(
+    items_df["Series"].isin(top_items), "Others"
+)
+
+stack_items = (
+    items_df.groupby(["Date", "Group"])["Value"]
+    .sum()
+    .reset_index()
+)
+
+group_order = [
+    g for g in top_items if g != "Others"
+] + ["Others"]
+
+color_map = {
+    "Strawberry": "pink",
+    "Sweet Corn": "yellow",
+    "Tomato": "red",
+    "Others": "gray",
+}
+
+fig = px.area(
+    stack_items,
+    x="Date",
+    y="Value",
+    color="Group",
+    labels={"Value": "Sales Amount (MYR)"},
+    category_orders={"Group": group_order},
+    color_discrete_map=color_map,
+)
+
+fig.update_traces(
+    hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
 
 # =========================
