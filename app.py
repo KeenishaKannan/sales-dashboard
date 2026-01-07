@@ -420,24 +420,26 @@ with c2:
 # =========================
 st.markdown("---")
 st.header("Sales by Customer Segment")
-st.caption("💡 Shows the monthly sales breakdown (MYR) by customer segment, highlighting each segment’s contribution to total sales over time.")
-
-
-
-segment_sheet = st.selectbox(
-    "Select customer segment sheet",
-    sheet_names,
-    index=len(sheet_names) - 1
+st.caption(
+    "Shows the monthly sales breakdown (MYR) by customer segment, "
+    "highlighting each segment’s contribution to total sales over time."
 )
 
-raw_segment = pd.read_excel(EXCEL_FILE, sheet_name=segment_sheet, header=None)
+# --- Fixed sheet name (no user selection) ---
+segment_sheet = "SEGMENT"
+
+raw_segment = pd.read_excel(
+    EXCEL_FILE,
+    sheet_name=segment_sheet,
+    header=None
+)
 
 segment_df, segment_err = build_long_format(raw_segment, segment_sheet)
 
 if segment_df is None:
     st.error(segment_err)
 else:
-    
+
     def extract_segment(name):
         name = name.upper()
         for seg in ["RTL", "OTH", "HRC", "DST", "CAI"]:
@@ -450,10 +452,9 @@ else:
     # --- Monthly aggregation ---
     segment_monthly = (
         segment_df
-        .groupby(["Date", "Segment"])["Value"]
+        .groupby(["Date", "Segment"], as_index=False)["Value"]
         .sum()
         .round(0)
-        .reset_index()
     )
 
     # --- Stacked bar chart ---
@@ -474,7 +475,6 @@ else:
         tickangle=45
     )
 
-   
     fig.update_traces(
         hovertemplate=
         "Month=%{x|%Y-%m}<br>"
@@ -489,6 +489,7 @@ else:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 # =========================
 # Items & Customers Trend
