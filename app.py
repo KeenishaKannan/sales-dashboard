@@ -183,11 +183,24 @@ metric = st.radio(
 
 base_df = items_df if metric == "Sales Amount (MYR)" else customers_df
 
+entity_label = "Item" if metric == "Sales Amount (MYR)" else "Customer"
+entities = sorted(base_df["Series"].unique())
+
+selected_entities = st.multiselect(
+    f"Filter by {entity_label}",
+    entities,
+    default=[],
+    key="yoy_optional_entity_filter"
+)
+
 df_yoy = base_df.copy()
 df_yoy["Date"] = pd.to_datetime(df_yoy["Date"])
 df_yoy["Year"] = df_yoy["Date"].dt.year
 df_yoy["MonthNum"] = df_yoy["Date"].dt.month
 df_yoy["Month"] = df_yoy["Date"].dt.strftime("%b")
+
+if selected_entities:
+    df_yoy = df_yoy[df_yoy["Series"].isin(selected_entities)]
 
 years = sorted(df_yoy["Year"].unique())
 year_range = st.slider(
@@ -244,11 +257,12 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
+
 # =========================
-# Pie Charts: Sales by Month 
+# Pie Charts
 # =========================
 st.markdown("---")
-st.header("Pie Chart of Monthly Sales Breakdown")
+st.header("Monthly Sales Breakdown")
 st.caption("💡 Select a month to view the breakdown for Items (MYR) and Customers (Quantity Sold).")
 
 
@@ -306,12 +320,16 @@ with c1:
         items_pie,
         names="Series",
         values="Value",
+        color="Series",
+        color_discrete_map={
+            "Others": "#9E9E9E"  
+        }
     )
 
     fig_items_pie.update_traces(
-        direction="clockwise",   
-        sort=False,              
-        rotation=0,              
+        direction="clockwise",
+        sort=False,
+        rotation=0,
         textinfo="percent",
         textposition="inside",
         hovertemplate="Item=%{label}<br>Sales=%{value:,.0f} MYR<br>%{percent}<extra></extra>",
@@ -324,38 +342,226 @@ with c1:
     )
 
     st.plotly_chart(fig_items_pie, use_container_width=True)
-
 # -------------------------
-# Pie 2: Sales Based on Customers (Quantity Sold)
+# Pie 2 : RTL Supermarket Pie 
 # -------------------------
 with c2:
-    st.subheader("Sales Based on Customers (Quantity Sold)")
+    st.subheader("Sales Based on Supermarkets (RTL - Sales Amount)")
 
-    cust_m = customers_df[customers_df["Date"].dt.to_period("M") == selected_month].copy()
-    cust_pie = top_n_with_others(cust_m, "Series", "Value", TOP_N_CUSTOMERS)
+    tidy_df = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
 
-    fig_cust_pie = px.pie(
-        cust_pie,
-        names="Series",
-        values="Value",
+    tidy_df["Date"] = pd.to_datetime(
+        tidy_df["Year"].astype(str) + "-" +
+        tidy_df["Month"].astype(str).str.zfill(2) + "-01"
     )
 
-    fig_cust_pie.update_traces(
+    rtl_df = tidy_df[tidy_df["Section"].str.upper() == "RTL"].copy()
+
+    rtl_month = rtl_df[rtl_df["Date"].dt.to_period("M") == selected_month]
+
+    if rtl_month.empty:
+        latest_month = rtl_df["Date"].max().to_period("M")
+        rtl_month = rtl_df[rtl_df["Date"].dt.to_period("M") == latest_month]
+
+    rtl_pie = (
+        rtl_month
+        .groupby("Sub section", as_index=False)["Amount"]
+        .sum()
+        .rename(columns={"Sub section": "Supermarket", "Amount": "Sales"})
+        .sort_values("Sales", ascending=False)  
+    )
+
+    rtl_colors = {
+        "AEN": "#636EFA",
+        "JGC": "#EF553B",
+        "TFP": "#00CC96",
+        "IST": "#AB63FA",
+        "QRA": "#19D3F3",
+        "MCV": "#FFA15A",
+        "OTH": "#9E9E9E",
+    }
+
+    fig_rtl = px.pie(
+        rtl_pie,
+        names="Supermarket",
+        values="Sales",
+        color="Supermarket",
+        color_discrete_map=rtl_colors,
+    )
+
+    fig_rtl.update_traces(
         direction="clockwise",
-        sort=False,
+        sort=False,       
         rotation=0,
         textinfo="percent",
         textposition="inside",
-        hovertemplate="Customer=%{label}<br>Quantity=%{value:,.0f}<br>%{percent}<extra></extra>",
     )
 
-    fig_cust_pie.update_layout(
+    fig_rtl.update_layout(
         template="plotly_white",
         height=520,
-        legend_title_text="Customer",
+        legend_title_text="Supermarket",
     )
 
-    st.plotly_chart(fig_cust_pie, use_container_width=True)
+    st.plotly_chart(fig_rtl, use_container_width=True)
+# =========================
+# Heatmap: Item x Customer (Monthly Sales)
+# =========================
+
+st.subheader("Item × Customer Sales Heatmap")
+st.caption("💡 This heatmap visualizes sales intensity (MYR) across items and customers to identify key sales drivers.")
+
+tidy_df = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
+
+# --- Build Date ---
+tidy_df["Date"] = pd.to_datetime(
+    tidy_df["Year"].astype(str) + "-" +
+    tidy_df["Month"].astype(int).astype(str).str.zfill(2) + "-01",
+    errors="coerce"
+)
+
+# --- Month selector ---
+months = sorted(tidy_df["Date"].dropna().dt.to_period("M").unique())
+month_labels = [m.to_timestamp().strftime("%b %Y") for m in months]
+
+selected_month_label = st.selectbox(
+    "Select month",
+    month_labels,
+    index=len(month_labels) - 1 if month_labels else 0,
+    key="heatmap_month_select"
+)
+
+selected_month = pd.to_datetime(
+    selected_month_label, format="%b %Y"
+).to_period("M")
+
+# --- Filter selected month ---
+d = tidy_df[tidy_df["Date"].dt.to_period("M") == selected_month].copy()
+
+# --- Aggregate Item x Customer ---
+d["Item"] = d["Item"].astype(str)
+d["Sales to"] = d["Sales to"].astype(str)
+
+heat_df = (
+    d.groupby(["Item", "Sales to"], as_index=False)["Amount"]
+    .sum()
+)
+
+heat_pivot = (
+    heat_df
+    .pivot(index="Item", columns="Sales to", values="Amount")
+    .fillna(0)
+)
+
+if heat_pivot.empty:
+    st.warning("No data available for the selected month.")
+else:
+    # --- Order by total sales (descending) ---
+    heat_pivot = heat_pivot.loc[
+        heat_pivot.sum(axis=1).sort_values(ascending=False).index,
+        heat_pivot.sum(axis=0).sort_values(ascending=False).index
+    ]
+
+    vmax_default = int(heat_pivot.values.max())
+
+    vmax = st.slider(
+        "Adjust colour range (MYR)",
+        min_value=0,
+        max_value=vmax_default,
+        value=vmax_default,
+        key="heatmap_colour_range"
+    )
+
+    fig = px.imshow(
+        heat_pivot,
+        aspect="auto",
+        color_continuous_scale="Blues",
+        zmin=0,
+        zmax=vmax,
+        labels={
+            "x": "Customer",
+            "y": "Item",
+            "color": "Sales (MYR)"
+        }
+    )
+
+    fig.update_layout(
+        template="plotly_white",
+        height=620,
+        xaxis_tickangle=-45
+    )
+
+    fig.update_traces(
+        hovertemplate=
+        "Item=%{y}<br>"
+        "Customer=%{x}<br>"
+        "Sales=%{z:,.0f} MYR<extra></extra>"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# =========================
+# RTL Supermarket Sales Trend
+# =========================
+
+st.subheader("Trend of Sales Amount by Supermarket (RTL)")
+st.caption("💡 This chart illustrates the monthly sales amount trends (MYR) for each supermarket, highlighting changes over time.")
+
+
+tidy_df = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
+
+tidy_df["Date"] = pd.to_datetime(
+    tidy_df["Year"].astype(str) + "-" +
+    tidy_df["Month"].astype(str).str.zfill(2) + "-01"
+)
+
+rtl_df = tidy_df[tidy_df["Section"].str.upper() == "RTL"].copy()
+
+rtl_trend = (
+    rtl_df
+    .groupby(["Date", "Sub section"], as_index=False)["Amount"]
+    .sum()
+    .rename(columns={
+        "Sub section": "Supermarket",
+        "Amount": "Sales"
+    })
+)
+
+rtl_colors = {
+    "AEN": "#636EFA",
+    "JGC": "#EF553B",
+    "TFP": "#00CC96",
+    "IST": "#AB63FA",
+    "QRA": "#19D3F3",
+    "MCV": "#FFA15A",
+    "OTH": "#9E9E9E",
+}
+
+fig_rtl_trend = px.line(
+    rtl_trend,
+    x="Date",
+    y="Sales",
+    color="Supermarket",
+    color_discrete_map=rtl_colors,
+    markers=True,
+    hover_data={
+        "Supermarket": True,
+        "Date": "|%Y-%m",
+        "Sales": ":,.0f"
+    }
+)
+
+fig_rtl_trend.update_layout(
+    template="plotly_white",
+    height=520,
+    xaxis_title="Month",
+    yaxis_title="Sales (MYR)",
+    legend_title_text="Supermarket",
+)
+
+st.plotly_chart(fig_rtl_trend, use_container_width=True)
+
 
 # =========================
 # Sales Change by Month – Items
@@ -372,7 +578,7 @@ col1, col2 = st.columns(2)
 with col1:
     st.header("Sales Change by Month – Items")
     st.caption(
-        "Shows how total monthly sales (MYR) change over time, broken down by key items, "
+        "💡Shows how total monthly sales (MYR) change over time, broken down by key items, "
         "to highlight which items are driving overall sales growth or decline."
     )
 
@@ -432,7 +638,7 @@ with col1:
 with col2:
     st.header("Sales by Customer Segment")
     st.caption(
-        "Shows the monthly sales breakdown (MYR) by customer segment, "
+        "💡Shows the monthly sales breakdown (MYR) by customer segment, "
         "highlighting each segment’s contribution to total sales over time."
     )
 
@@ -823,136 +1029,6 @@ with c2:
         )
     )
 
-    st.plotly_chart(fig, use_container_width=True)
-# =====================================================
-# Additional Actionable Insights
-# =====================================================
-st.markdown("---")
-st.header("Additional Actionable Insights")
-
-import numpy as np
-
-months_window = st.radio(
-    "Select time window",
-    options=[3, 6, 12],
-    index=1,
-    horizontal=True,
-    key="stability_window"
-)
-
-
-_items = items_df.copy()
-_items["Date"] = pd.to_datetime(_items["Date"])
-_customers = customers_df.copy()
-_customers["Date"] = pd.to_datetime(_customers["Date"])
-
-last_month_items = _items["Date"].max()
-start_month_items = (last_month_items - pd.DateOffset(months=months_window - 1)).replace(day=1)
-_items = _items[_items["Date"] >= start_month_items]
-
-last_month_cust = _customers["Date"].max()
-start_month_cust = (last_month_cust - pd.DateOffset(months=months_window - 1)).replace(day=1)
-_customers = _customers[_customers["Date"] >= start_month_cust]
-
-# =====================================================
-# 1) Item Demand Stability
-# =====================================================
-st.subheader("Item Demand Stability")
-
-item_monthly = (
-    _items.groupby(["Series", "Date"])["Value"]
-    .sum()
-    .reset_index()
-)
-
-item_stats = (
-    item_monthly.groupby("Series")["Value"]
-    .agg(mean="mean", std="std")
-    .reset_index()
-)
-
-item_stats["std"] = item_stats["std"].fillna(0)
-item_stats["CV_Pct"] = np.where(
-    item_stats["mean"] > 0,
-    (item_stats["std"] / item_stats["mean"]) * 100.0,
-    np.nan
-)
-
-# Stable = low CV, Risky = high CV 
-stable_items = item_stats.sort_values("CV_Pct", ascending=True).head(10).copy()
-risky_items = item_stats.sort_values("CV_Pct", ascending=False).head(10).copy()
-
-
-stable_items["CV_Pct_disp"] = (
-    stable_items["CV_Pct"]
-    .replace([np.inf, -np.inf], np.nan)
-    .fillna(0)
-    .round(0)
-    .astype(int)
-)
-
-risky_items["CV_Pct_disp"] = (
-    risky_items["CV_Pct"]
-    .replace([np.inf, -np.inf], np.nan)
-    .fillna(0)
-    .round(0)
-    .astype(int)
-)
-
-c1, c2 = st.columns(2)
-
-with c1:
-    st.markdown("✅ **Stable Demand (Low Variance)**")
-    st.caption("💡 Lower CV% = more predictable demand.")
-    fig = px.bar(
-        stable_items.sort_values("CV_Pct_disp"),
-        x="CV_Pct_disp",
-        y="Series",
-        orientation="h",
-        text="CV_Pct_disp",
-        labels={"Series": "Item", "CV_Pct_disp": "Stability Score (CV%)"},
-        color_discrete_sequence=["#22C55E"],  # green
-    )
-    fig.update_traces(
-        texttemplate="%{text}%",
-        textposition="outside",
-        hovertemplate="Item=%{y}<br>Stability (CV)=%{x:.0f}%<extra></extra>",
-    )
-    fig.update_layout(
-        template="plotly_white",
-        height=420,  
-        showlegend=False,
-        margin=dict(l=10, r=10, t=20, b=10),
-        xaxis_title="Stability Score (CV%)",
-        yaxis_title="",
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-with c2:
-    st.markdown("⚠️ **Highly Seasonal / Risky (High Variance)**")
-    st.caption("💡 Higher CV% = more seasonal/unstable.")
-    fig = px.bar(
-        risky_items.sort_values("CV_Pct_disp"),
-        x="CV_Pct_disp",
-        y="Series",
-        orientation="h",
-        text="CV_Pct_disp",
-        labels={"Series": "Item", "CV_Pct_disp": "Risk Score (CV%)"},
-        color_discrete_sequence=["#F59E0B"],  # orange
-    )
-    fig.update_traces(
-        texttemplate="%{text}%",
-        textposition="outside",
-        hovertemplate="Item=%{y}<br>Risk (CV)=%{x:.0f}%<extra></extra>",
-    )
-    fig.update_layout(
-        template="plotly_white",
-        height=420,  
-        showlegend=False,
-        margin=dict(l=10, r=10, t=20, b=10),
-        xaxis_title="Risk Score (CV%)",
-        yaxis_title="",
-    )
     st.plotly_chart(fig, use_container_width=True)
 
 # =========================
