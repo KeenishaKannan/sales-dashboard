@@ -94,7 +94,7 @@ if not Path(EXCEL_FILE).exists():
 xls = pd.ExcelFile(EXCEL_FILE)
 sheet_names = xls.sheet_names
 
-# Fixed sheets (no sidebar UI)
+# Fixed sheets 
 items_sheet = "ITEMS"
 customers_sheet = "CUSTOMERS"
 
@@ -404,6 +404,7 @@ with c2:
     )
 
     st.plotly_chart(fig_rtl, use_container_width=True)
+
 # =========================
 # Heatmap: Item x Customer (Monthly Sales)
 # =========================
@@ -413,14 +414,14 @@ st.caption("💡 This heatmap visualizes sales intensity (MYR) across items and 
 
 tidy_df = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
 
-# --- Build Date ---
+
 tidy_df["Date"] = pd.to_datetime(
     tidy_df["Year"].astype(str) + "-" +
     tidy_df["Month"].astype(int).astype(str).str.zfill(2) + "-01",
     errors="coerce"
 )
 
-# --- Month selector ---
+
 months = sorted(tidy_df["Date"].dropna().dt.to_period("M").unique())
 month_labels = [m.to_timestamp().strftime("%b %Y") for m in months]
 
@@ -435,10 +436,10 @@ selected_month = pd.to_datetime(
     selected_month_label, format="%b %Y"
 ).to_period("M")
 
-# --- Filter selected month ---
+
 d = tidy_df[tidy_df["Date"].dt.to_period("M") == selected_month].copy()
 
-# --- Aggregate Item x Customer ---
+
 d["Item"] = d["Item"].astype(str)
 d["Sales to"] = d["Sales to"].astype(str)
 
@@ -456,6 +457,22 @@ heat_pivot = (
 if heat_pivot.empty:
     st.warning("No data available for the selected month.")
 else:
+
+
+    cols_to_drop = [
+        c for c in heat_pivot.columns
+        if str(c).strip().upper() == "CAI"
+        or "OTHER" in str(c).upper()
+        or "E-COMMERCE" in str(c).upper()
+        or "ECOMMERCE" in str(c).upper()
+        or "E COMM" in str(c).upper()
+        or "E-COMM" in str(c).upper()
+    ]
+
+    if cols_to_drop:
+        heat_pivot = heat_pivot.drop(columns=cols_to_drop, errors="ignore")
+
+
     # --- Order by total sales (descending) ---
     heat_pivot = heat_pivot.loc[
         heat_pivot.sum(axis=1).sort_values(ascending=False).index,
@@ -500,67 +517,131 @@ else:
 
     st.plotly_chart(fig, use_container_width=True)
 
+# ============================================================
+# Average Sales per Outlet by Supermarket (RTL)
+# ============================================================
 
-# =========================
-# RTL Supermarket Sales Trend
-# =========================
-
-st.subheader("Trend of Sales Amount by Supermarket (RTL)")
-st.caption("💡 This chart illustrates the monthly sales amount trends (MYR) for each supermarket, highlighting changes over time.")
-
-
-tidy_df = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
-
-tidy_df["Date"] = pd.to_datetime(
-    tidy_df["Year"].astype(str) + "-" +
-    tidy_df["Month"].astype(str).str.zfill(2) + "-01"
+st.subheader("Average Sales per Outlet by Supermarket (RTL)")
+st.caption(
+    "💡 This chart shows estimated average sales per outlet by dividing total supermarket sales "
+    "by the number of unique outlet names in the filtered customer-only data."
 )
 
-rtl_df = tidy_df[tidy_df["Section"].str.upper() == "RTL"].copy()
 
-rtl_trend = (
-    rtl_df
-    .groupby(["Date", "Sub section"], as_index=False)["Amount"]
+df1 = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
+df2 = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data DBS2")
+df = pd.concat([df1, df2], ignore_index=True)
+
+
+df["Date"] = pd.to_datetime(
+    df["Year"].astype(str) + "-" +
+    df["Month"].astype(str).str.zfill(2) + "-01",
+    errors="coerce"
+)
+
+
+def map_supermarket(name):
+    n = str(name).upper()
+
+    if "AEON" in n:
+        return "AEN"
+    if n.startswith("JG") or "JAYA GROCER" in n:
+        return "JGC"
+    if (
+        "MERCATO" in n or
+        "FOOD MERCHANT" in n or
+        "THE FOOD MERCHANT" in n or
+        "FOOD PURVEYOR" in n or
+        "TFP" in n
+    ):
+        return "TFP"
+    if "QRA" in n:
+        return "QRA"
+    return None
+
+df["Supermarket_Label"] = df["Sales to"].apply(map_supermarket)
+
+
+df = df.dropna(subset=["Supermarket_Label"])
+
+
+outlet_counts = (
+    df.groupby(["Supermarket_Label", "Date"])["Sales to"]
+    .nunique()
+    .reset_index(name="Unique_Outlets")
+)
+
+
+total_sales = (
+    df.groupby(["Supermarket_Label", "Date"])["Amount"]
     .sum()
-    .rename(columns={
-        "Sub section": "Supermarket",
-        "Amount": "Sales"
-    })
+    .reset_index(name="Total_Sales")
 )
 
-rtl_colors = {
-    "AEN": "#636EFA",
-    "JGC": "#EF553B",
-    "TFP": "#00CC96",
-    "IST": "#AB63FA",
-    "QRA": "#19D3F3",
-    "MCV": "#FFA15A",
-    "OTH": "#9E9E9E",
-}
+merged = pd.merge(
+    total_sales,
+    outlet_counts,
+    on=["Supermarket_Label", "Date"],
+    how="left"
+)
 
-fig_rtl_trend = px.line(
-    rtl_trend,
+merged["Avg_Sales_per_Outlet"] = (
+    merged["Total_Sales"] / merged["Unique_Outlets"]
+)
+
+merged = merged.sort_values("Date")
+
+
+avg_line = (
+    merged.groupby("Date", as_index=False)["Avg_Sales_per_Outlet"]
+    .mean()
+)
+avg_line["Supermarket_Label"] = "Average"
+
+plot_df = pd.concat(
+    [merged[["Date", "Avg_Sales_per_Outlet", "Supermarket_Label"]], avg_line],
+    ignore_index=True
+)
+
+
+fig = px.line(
+    plot_df,
     x="Date",
-    y="Sales",
-    color="Supermarket",
-    color_discrete_map=rtl_colors,
+    y="Avg_Sales_per_Outlet",
+    color="Supermarket_Label",
     markers=True,
-    hover_data={
-        "Supermarket": True,
-        "Date": "|%Y-%m",
-        "Sales": ":,.0f"
+    labels={
+        "Date": "Month",
+        "Avg_Sales_per_Outlet": "Average Sales per Outlet (MYR)",
+        "Supermarket_Label": "Supermarket"
     }
 )
 
-fig_rtl_trend.update_layout(
-    template="plotly_white",
-    height=520,
-    xaxis_title="Month",
-    yaxis_title="Sales (MYR)",
-    legend_title_text="Supermarket",
+# Colors
+fig.for_each_trace(
+    lambda t: t.update(
+        line=dict(
+            color=(
+                "#1f77b4" if t.name == "AEN" else
+                "#2ca02c" if t.name == "JGC" else
+                "#ff7f0e" if t.name == "TFP" else
+                "#d62728" if t.name == "QRA" else
+                "black"
+            ),
+            width=3 if t.name == "Average" else 2
+        )
+    )
 )
 
-st.plotly_chart(fig_rtl_trend, use_container_width=True)
+fig.update_traces(
+    hovertemplate=
+        "Supermarket=%{fullData.name}<br>"
+        "Month=%{x|%b %Y}<br>"
+        "Average Sales per Outlet=%{y:,.0f} MYR"
+        "<extra></extra>"
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
 
 # =========================
