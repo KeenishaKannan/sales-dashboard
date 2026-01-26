@@ -84,20 +84,6 @@ def build_long_format(raw_df, sheet_name):
 
     return pd.DataFrame(records, columns=["Series", "Date", "Value"]), None
 
-def standardize_tidy_amount(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    INPUT FIX ONLY (no logic change):
-    - If 'Amount' is missing but 'Amount (MY)' exists, create 'Amount' from it.
-    - Keeps your existing downstream code untouched.
-    """
-    d = df.copy()
-    if "Amount" not in d.columns and "Amount (MY)" in d.columns:
-        d["Amount"] = pd.to_numeric(d["Amount (MY)"], errors="coerce")
-    else:
-        if "Amount" in d.columns:
-            d["Amount"] = pd.to_numeric(d["Amount"], errors="coerce")
-    return d
-
 # =========================
 # Load Excel
 # =========================
@@ -108,7 +94,7 @@ if not Path(EXCEL_FILE).exists():
 xls = pd.ExcelFile(EXCEL_FILE)
 sheet_names = xls.sheet_names
 
-# Fixed sheets
+# Fixed sheets 
 items_sheet = "ITEMS"
 customers_sheet = "CUSTOMERS"
 
@@ -117,6 +103,7 @@ raw_customers = pd.read_excel(EXCEL_FILE, sheet_name=customers_sheet, header=Non
 
 items_df, _ = build_long_format(raw_items, items_sheet)
 customers_df, _ = build_long_format(raw_customers, customers_sheet)
+
 
 # =========================
 # Overall Trend
@@ -130,6 +117,7 @@ c_items, c_customers = st.columns(2)
 with c_items:
     st.subheader("Trend Analysis of Items Based on Sales Amount")
     st.caption("💡 Shows the total monthly sales amount (MYR) summed across all items to track overall sales performance over time.")
+
 
     items_total = items_df.groupby("Date")["Value"].sum().reset_index()
 
@@ -157,6 +145,7 @@ with c_items:
 with c_customers:
     st.subheader("Trend Analysis of Customers Based on Items Sold")
     st.caption("💡 Shows the total monthly quantity sold summed across all customers to track overall demand volume over time")
+
 
     cust_total = customers_df.groupby("Date")["Value"].sum().reset_index()
 
