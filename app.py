@@ -84,6 +84,20 @@ def build_long_format(raw_df, sheet_name):
 
     return pd.DataFrame(records, columns=["Series", "Date", "Value"]), None
 
+def standardize_tidy_amount(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    INPUT FIX ONLY (no logic change):
+    - If 'Amount' is missing but 'Amount (MY)' exists, create 'Amount' from it.
+    - Keeps your existing downstream code untouched.
+    """
+    d = df.copy()
+    if "Amount" not in d.columns and "Amount (MY)" in d.columns:
+        d["Amount"] = pd.to_numeric(d["Amount (MY)"], errors="coerce")
+    else:
+        if "Amount" in d.columns:
+            d["Amount"] = pd.to_numeric(d["Amount"], errors="coerce")
+    return d
+
 # =========================
 # Load Excel
 # =========================
@@ -94,7 +108,7 @@ if not Path(EXCEL_FILE).exists():
 xls = pd.ExcelFile(EXCEL_FILE)
 sheet_names = xls.sheet_names
 
-# Fixed sheets 
+# Fixed sheets
 items_sheet = "ITEMS"
 customers_sheet = "CUSTOMERS"
 
@@ -103,7 +117,6 @@ raw_customers = pd.read_excel(EXCEL_FILE, sheet_name=customers_sheet, header=Non
 
 items_df, _ = build_long_format(raw_items, items_sheet)
 customers_df, _ = build_long_format(raw_customers, customers_sheet)
-
 
 # =========================
 # Overall Trend
@@ -117,7 +130,6 @@ c_items, c_customers = st.columns(2)
 with c_items:
     st.subheader("Trend Analysis of Items Based on Sales Amount")
     st.caption("💡 Shows the total monthly sales amount (MYR) summed across all items to track overall sales performance over time.")
-
 
     items_total = items_df.groupby("Date")["Value"].sum().reset_index()
 
@@ -146,7 +158,6 @@ with c_customers:
     st.subheader("Trend Analysis of Customers Based on Items Sold")
     st.caption("💡 Shows the total monthly quantity sold summed across all customers to track overall demand volume over time")
 
-
     cust_total = customers_df.groupby("Date")["Value"].sum().reset_index()
 
     fig_cust = px.line(
@@ -170,7 +181,7 @@ with c_customers:
     st.plotly_chart(fig_cust, use_container_width=True)
 
 # =========================
-# Year-to-Year Sales Comparison 
+# Year-to-Year Sales Comparison
 # =========================
 st.markdown("---")
 st.header("Year-to-Year Sales Comparison")
@@ -241,10 +252,9 @@ fig = px.line(
 
 fig.update_traces(
     hovertemplate=
-    "Year=%{customdata}<br>"
-    "Month=%{x}<br>"
-    f"{metric}=%{{y:,.0f}}<extra></extra>",
-    customdata=yoy_df["Year"]
+        "Year=%{fullData.name}<br>"
+        "Month=%{x}<br>"
+        f"{metric}=%{{y:,.0f}}<extra></extra>"
 )
 
 fig.update_layout(
@@ -265,7 +275,6 @@ st.markdown("---")
 st.header("Monthly Sales Breakdown")
 st.caption("💡 Select a month to view the breakdown for Items (MYR) and Customers (Quantity Sold).")
 
-
 items_df["Date"] = pd.to_datetime(items_df["Date"])
 customers_df["Date"] = pd.to_datetime(customers_df["Date"])
 
@@ -282,7 +291,6 @@ selected_month_label = st.selectbox(
 )
 selected_month = pd.to_datetime(selected_month_label, format="%b %Y").to_period("M")
 
-# --- Control how many slices to show ---
 TOP_N_ITEMS = 10
 TOP_N_CUSTOMERS = 10
 
@@ -301,7 +309,6 @@ def top_n_with_others(df, name_col, value_col, top_n, others_label="Others"):
     others_row = pd.DataFrame([{name_col: others_label, value_col: others_val}])
     out = pd.concat([top, others_row], ignore_index=True)
 
-   
     out = out.sort_values(value_col, ascending=False).reset_index(drop=True)
     return out
 
@@ -313,49 +320,91 @@ c1, c2 = st.columns(2)
 with c1:
     st.subheader("Sales Based on Items (MYR)")
 
+    # Filter for selected month
     items_m = items_df[items_df["Date"].dt.to_period("M") == selected_month].copy()
-    items_pie = top_n_with_others(items_m, "Series", "Value", TOP_N_ITEMS)
+    items_m["Series"] = items_m["Series"].astype(str).str.strip()
 
+    # REMOVE invalid entries (0, numeric-only)
+    items_m = items_m[
+        (items_m["Series"] != "") &
+        (~items_m["Series"].str.fullmatch(r"0|0\.0|0\.00")) &
+        (~items_m["Series"].str.fullmatch(r"\d+(\.\d+)?"))
+    ].reset_index(drop=True)
+
+    # Aggregate totals per item
+    items_pie = (
+        items_m.groupby("Series", as_index=False)["Value"]
+        .sum()
+        .sort_values("Value", ascending=False)   
+        .reset_index(drop=True)
+    )
+
+    # Top-N + Others
+    if len(items_pie) > TOP_N_ITEMS:
+        top = items_pie.iloc[:TOP_N_ITEMS].copy()
+        others_val = items_pie.iloc[TOP_N_ITEMS:]["Value"].sum()
+        others_row = pd.DataFrame([{"Series": "Others", "Value": others_val}])
+        items_pie = pd.concat([top, others_row], ignore_index=True)
+
+    # -------------------------
+    # Fixed color map
+    # -------------------------
+    item_colors = {
+        "Strawberry": "pink",       
+        "Tomato": "red",            
+        "Sweet Corn": "yellow",
+        "Daikon (Raddish)": "#26A69A",
+        "Spinach": "#4CAF50",
+        "Tong Hou": "#FFA726",
+        "Seedlings": "#9575CD",
+        "Cabbage": "#CFD8DC",
+        "Asparagus": "#1E88E5",
+        "Shiro Negi": "#546E7A",
+        "Others": "gray"
+    }
+
+    # -------------------------
+    # Pie chart
+    # -------------------------
     fig_items_pie = px.pie(
         items_pie,
         names="Series",
         values="Value",
         color="Series",
-        color_discrete_map={
-            "Others": "#9E9E9E"  
-        }
+        color_discrete_map=item_colors
     )
 
     fig_items_pie.update_traces(
-        direction="clockwise",
-        sort=False,
+        direction="clockwise",          
+        sort=False,                     
         rotation=0,
         textinfo="percent",
         textposition="inside",
-        hovertemplate="Item=%{label}<br>Sales=%{value:,.0f} MYR<br>%{percent}<extra></extra>",
+        hovertemplate="Item=%{label}<br>Sales=%{value:,.0f} MYR<br>%{percent}<extra></extra>"
     )
 
     fig_items_pie.update_layout(
         template="plotly_white",
         height=520,
-        legend_title_text="Item",
+        legend_title_text="Item"
     )
 
     st.plotly_chart(fig_items_pie, use_container_width=True)
-# -------------------------
-# Pie 2 : RTL Supermarket Pie 
-# -------------------------
+
+
+
 with c2:
     st.subheader("Sales Based on Supermarkets (RTL - Sales Amount)")
 
     tidy_df = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
+    tidy_df = standardize_tidy_amount(tidy_df)
 
     tidy_df["Date"] = pd.to_datetime(
         tidy_df["Year"].astype(str) + "-" +
         tidy_df["Month"].astype(str).str.zfill(2) + "-01"
     )
 
-    rtl_df = tidy_df[tidy_df["Section"].str.upper() == "RTL"].copy()
+    rtl_df = tidy_df[tidy_df["Section"].astype(str).str.upper() == "RTL"].copy()
 
     rtl_month = rtl_df[rtl_df["Date"].dt.to_period("M") == selected_month]
 
@@ -368,7 +417,7 @@ with c2:
         .groupby("Sub section", as_index=False)["Amount"]
         .sum()
         .rename(columns={"Sub section": "Supermarket", "Amount": "Sales"})
-        .sort_values("Sales", ascending=False)  
+        .sort_values("Sales", ascending=False)
     )
 
     rtl_colors = {
@@ -391,7 +440,7 @@ with c2:
 
     fig_rtl.update_traces(
         direction="clockwise",
-        sort=False,       
+        sort=False,
         rotation=0,
         textinfo="percent",
         textposition="inside",
@@ -408,19 +457,17 @@ with c2:
 # =========================
 # Heatmap: Item x Customer (Monthly Sales)
 # =========================
-
 st.subheader("Item × Customer Sales Heatmap")
 st.caption("💡 This heatmap visualizes sales intensity (MYR) across items and customers to identify key sales drivers.")
 
 tidy_df = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
-
+tidy_df = standardize_tidy_amount(tidy_df)
 
 tidy_df["Date"] = pd.to_datetime(
     tidy_df["Year"].astype(str) + "-" +
     tidy_df["Month"].astype(int).astype(str).str.zfill(2) + "-01",
     errors="coerce"
 )
-
 
 months = sorted(tidy_df["Date"].dropna().dt.to_period("M").unique())
 month_labels = [m.to_timestamp().strftime("%b %Y") for m in months]
@@ -436,9 +483,7 @@ selected_month = pd.to_datetime(
     selected_month_label, format="%b %Y"
 ).to_period("M")
 
-
 d = tidy_df[tidy_df["Date"].dt.to_period("M") == selected_month].copy()
-
 
 d["Item"] = d["Item"].astype(str)
 d["Sales to"] = d["Sales to"].astype(str)
@@ -457,8 +502,6 @@ heat_pivot = (
 if heat_pivot.empty:
     st.warning("No data available for the selected month.")
 else:
-
-
     cols_to_drop = [
         c for c in heat_pivot.columns
         if str(c).strip().upper() == "CAI"
@@ -472,8 +515,6 @@ else:
     if cols_to_drop:
         heat_pivot = heat_pivot.drop(columns=cols_to_drop, errors="ignore")
 
-
-    # --- Order by total sales (descending) ---
     heat_pivot = heat_pivot.loc[
         heat_pivot.sum(axis=1).sort_values(ascending=False).index,
         heat_pivot.sum(axis=0).sort_values(ascending=False).index
@@ -517,145 +558,135 @@ else:
 
     st.plotly_chart(fig, use_container_width=True)
 
-# ============================================================
-# Average Sales per Outlet by Supermarket (RTL)
-# ============================================================
+# ======================================================
+# Sales per Retails (RTL)
+# ======================================================
+st.header("Sales per Retails")
+st.caption("💡 Monthly sales trend for major retailers based on RTL sheet.")
 
-st.subheader("Average Sales per Outlet by Supermarket (RTL)")
-st.caption(
-    "💡 This chart shows estimated average sales per outlet by dividing total supermarket sales "
-    "by the number of unique outlet names in the filtered customer-only data."
-)
+import openpyxl
+import pandas as pd
+import plotly.express as px
+import re
 
+def load_rtl_long(excel_file: str) -> pd.DataFrame:
+    wb = openpyxl.load_workbook(excel_file, data_only=True)
+    ws = wb["RTL"]
 
-df1 = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data")
-df2 = pd.read_excel(EXCEL_FILE, sheet_name="Tidy Data DBS2")
-df = pd.concat([df1, df2], ignore_index=True)
+    YEAR_ROW = 2
+    MONTH_ROW = 3
+    FIRST_DATA_ROW = 4
+    CUSTOMER_COL = 1
 
+    year_cols = []
+    max_col = ws.max_column
 
-df["Date"] = pd.to_datetime(
-    df["Year"].astype(str) + "-" +
-    df["Month"].astype(str).str.zfill(2) + "-01",
-    errors="coerce"
-)
+   
+    for c in range(1, max_col + 1):
+        v = ws.cell(YEAR_ROW, c).value
+        if isinstance(v, (int, float)) and int(v) == v and 2000 <= int(v) <= 2100:
+            year_cols.append((c, int(v)))
 
+    if not year_cols:
+        return pd.DataFrame(columns=["Date", "Retail", "Value"])
 
-def map_supermarket(name):
-    n = str(name).upper()
+    
+    col_to_date = {}
+    for i, (start_c, year_val) in enumerate(year_cols):
+        end_c = (year_cols[i + 1][0] - 1) if i + 1 < len(year_cols) else max_col
 
-    if "AEON" in n:
-        return "AEN"
-    if n.startswith("JG") or "JAYA GROCER" in n:
-        return "JGC"
-    if (
-        "MERCATO" in n or
-        "FOOD MERCHANT" in n or
-        "THE FOOD MERCHANT" in n or
-        "FOOD PURVEYOR" in n or
-        "TFP" in n
-    ):
-        return "TFP"
-    if "QRA" in n:
-        return "QRA"
-    return None
+        for c in range(start_c, end_c + 1):
+            m = ws.cell(MONTH_ROW, c).value
+            if isinstance(m, (int, float)) and int(m) == m and 1 <= int(m) <= 12:
+                col_to_date[c] = pd.Timestamp(year=year_val, month=int(m), day=1)
 
-df["Supermarket_Label"] = df["Sales to"].apply(map_supermarket)
+    if not col_to_date:
+        return pd.DataFrame(columns=["Date", "Retail", "Value"])
 
+   
+    rows = []
+    for r in range(FIRST_DATA_ROW, ws.max_row + 1):
+        retail = ws.cell(r, CUSTOMER_COL).value
+        if retail is None or str(retail).strip() == "":
+            continue
 
-df = df.dropna(subset=["Supermarket_Label"])
+        retail = str(retail).strip()
 
+        
+        if re.fullmatch(r"\d+(\.\d+)?", retail):
+            continue
 
-outlet_counts = (
-    df.groupby(["Supermarket_Label", "Date"])["Sales to"]
-    .nunique()
-    .reset_index(name="Unique_Outlets")
-)
+        for c, dt in col_to_date.items():
+            val = ws.cell(r, c).value
+            if val is None or val == "":
+                continue
 
+            num = pd.to_numeric(val, errors="coerce")
+            if pd.isna(num):
+                continue
 
-total_sales = (
-    df.groupby(["Supermarket_Label", "Date"])["Amount"]
-    .sum()
-    .reset_index(name="Total_Sales")
-)
+            rows.append((dt, retail, float(num)))
 
-merged = pd.merge(
-    total_sales,
-    outlet_counts,
-    on=["Supermarket_Label", "Date"],
-    how="left"
-)
+    out = pd.DataFrame(rows, columns=["Date", "Retail", "Value"])
+    if out.empty:
+        return out
 
-merged["Avg_Sales_per_Outlet"] = (
-    merged["Total_Sales"] / merged["Unique_Outlets"]
-)
-
-merged = merged.sort_values("Date")
-
-
-avg_line = (
-    merged.groupby("Date", as_index=False)["Avg_Sales_per_Outlet"]
-    .mean()
-)
-avg_line["Supermarket_Label"] = "Average"
-
-plot_df = pd.concat(
-    [merged[["Date", "Avg_Sales_per_Outlet", "Supermarket_Label"]], avg_line],
-    ignore_index=True
-)
-
-
-fig = px.line(
-    plot_df,
-    x="Date",
-    y="Avg_Sales_per_Outlet",
-    color="Supermarket_Label",
-    markers=True,
-    labels={
-        "Date": "Month",
-        "Avg_Sales_per_Outlet": "Average Sales per Outlet (MYR)",
-        "Supermarket_Label": "Supermarket"
-    }
-)
-
-# Colors
-fig.for_each_trace(
-    lambda t: t.update(
-        line=dict(
-            color=(
-                "#1f77b4" if t.name == "AEN" else
-                "#2ca02c" if t.name == "JGC" else
-                "#ff7f0e" if t.name == "TFP" else
-                "#d62728" if t.name == "QRA" else
-                "black"
-            ),
-            width=3 if t.name == "Average" else 2
-        )
+    out = (
+        out.groupby(["Date", "Retail"], as_index=False)["Value"]
+           .sum()
+           .sort_values(["Retail", "Date"])
     )
-)
+    return out
 
-fig.update_traces(
-    hovertemplate=
-        "Supermarket=%{fullData.name}<br>"
-        "Month=%{x|%b %Y}<br>"
-        "Average Sales per Outlet=%{y:,.0f} MYR"
-        "<extra></extra>"
-)
 
-st.plotly_chart(fig, use_container_width=True)
+
+rtl_long = load_rtl_long(EXCEL_FILE)
+
+if rtl_long.empty:
+    st.error("No RTL data found after parsing (check RTL sheet layout).")
+else:
+
+    top_n = 8
+    totals = rtl_long.groupby("Retail", as_index=False)["Value"].sum()
+    top_retails = totals.sort_values("Value", ascending=False).head(top_n)["Retail"].tolist()
+    rtl_plot = rtl_long[rtl_long["Retail"].isin(top_retails)].copy()
+
+   
+    fig_rtl = px.line(
+        rtl_plot,
+        x="Date",
+        y="Value",
+        color="Retail",
+        markers=True, 
+        labels={"Value": "Sales Amount (MYR)", "Date": "Month", "Retail": ""},
+    )
+
+    fig_rtl.update_traces(
+        hovertemplate=
+        "Month=%{x|%Y-%m}<br>"
+        "Customer=%{fullData.name}<br>"
+        "Sales Amount=%{y:,.0f}<extra></extra>"
+    )
+
+    fig_rtl.update_layout(
+        legend_title_text="",
+        yaxis_tickformat=",",
+        xaxis_tickformat="%Y%m",
+        height=520,
+        margin=dict(l=40, r=40, t=20, b=40),
+    )
+
+    st.plotly_chart(fig_rtl, use_container_width=True)
 
 
 # =========================
 # Sales Change by Month – Items
 # Sales by Customer Segment
 # =========================
-
 st.markdown("---")
 
 col1, col2 = st.columns(2)
 
-# ======================================================
-#Sales Change by Month – Items
-# ======================================================
 with col1:
     st.header("Sales Change by Month – Items")
     st.caption(
@@ -663,13 +694,19 @@ with col1:
         "to highlight which items are driving overall sales growth or decline."
     )
 
+  
+    items_df = items_df[items_df["Series"].astype(str).str.strip().str.lower().ne("")]   
+    items_df = items_df[items_df["Series"] != "0"]                                       
+    items_df = items_df[~items_df["Series"].str.contains("^others ?0$", case=False)]     
+
+    
     top_items = (
-        items_df.groupby("Series")["Value"]
+    items_df.groupby("Series")["Value"]
         .sum()
         .sort_values(ascending=False)
         .head(5)
         .index
-    )
+     )
 
     items_df["Group"] = items_df["Series"].where(
         items_df["Series"].isin(top_items), "Others"
@@ -711,7 +748,6 @@ with col1:
     )
 
     st.plotly_chart(fig_items, use_container_width=True)
-
 
 # ======================================================
 # Sales by Customer Segment
@@ -808,10 +844,13 @@ c_items, c_customers = st.columns(2)
 # -------- Items Trend --------
 with c_items:
     simulate_st_header = st.header("Items Trend Analysis")
-    st.caption("💡 Shows the monthly sales trend (MYR) for selected items over time, allowing comparison of performance and seasonality across products. ")
-
+    st.caption(
+        "💡 Shows the monthly sales trend (MYR) for selected items over time, "
+        "allowing comparison of performance and seasonality across products."
+    )
 
     items = sorted(items_df["Series"].unique())
+
     selected_items = st.multiselect(
         "Select items",
         items,
@@ -822,62 +861,88 @@ with c_items:
     if selected_items:
         fig = px.line(
             items_df[items_df["Series"].isin(selected_items)],
-            x="Date", y="Value", color="Series", markers=True,
+            x="Date",
+            y="Value",
+            color="Series",
+            markers=True,
             labels={"Value": "Sales Amount (MYR)"}
         )
+
         fig.update_traces(
             mode="lines+markers",
             hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
         )
+
         st.plotly_chart(fig, use_container_width=True)
+
 
 # -------- Customers Trend --------
 with c_customers:
-    simulate_st_header = st.header("Customers Trend Analysis")
-    st.caption("💡 Shows the monthly quantity sold to selected customers over time, allowing comparison of purchasing patterns and demand consistency. ")
+    st.header("Customers Trend Analysis")
+    st.caption(
+        "💡 Shows the monthly quantity sold to selected customers over time, "
+        "allowing comparison of purchasing patterns and demand consistency."
+    )
 
+    
+    customers_df["Series"] = (
+        customers_df["Series"]
+        .astype(str)
+        .str.strip()
+    )
 
-    customers = sorted(customers_df["Series"].unique())
+   
+    customers = sorted(
+        customers_df.loc[
+            (customers_df["Series"] != "") &
+            (~customers_df["Series"].str.fullmatch(r"\d+(\.\d+)?"))
+        ]["Series"].unique()
+    )
+
+    
     selected_customers = st.multiselect(
         "Select customers",
         customers,
-        default=customers[:5],
+        default=customers[:5],      
         key="customers_trend_select"
     )
 
+   
+    selected_customers = [
+        c for c in selected_customers if c in customers
+    ]
+
     if selected_customers:
+        df_plot = customers_df[
+            customers_df["Series"].isin(selected_customers)
+        ]
+
         fig = px.line(
-            customers_df[customers_df["Series"].isin(selected_customers)],
-            x="Date", y="Value", color="Series", markers=True,
+            df_plot,
+            x="Date",
+            y="Value",
+            color="Series",
+            markers=True,
             labels={"Value": "Quantity Sold"}
         )
+
         fig.update_traces(
             mode="lines+markers",
             hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
         )
+
         st.plotly_chart(fig, use_container_width=True)
 
+
 # =========================
-# Growth & Action Insights 
+# Growth & Action Insights
 # =========================
 st.markdown("---")
 st.header("Growth & Action Insights")
 
-import numpy as np 
-
+import numpy as np
 
 def _compute_mom_stats(df, entity_col, value_col="Value", months_window=6, cap_pct=300):
-    """
-    Returns a dataframe with:
-      - entity
-      - avg_mom_recent (avg MoM% over last 3 valid transitions)
-      - avg_mom_window (avg MoM% over the window)
-      - vol_mom_window (std dev of MoM% over the window)
-      - avg_value_window (avg monthly value over the window)
-    INSIGHTS rules:
-      - ignore MoM where previous month value is too small 
-      - cap MoM% to +/- cap_pct for readability
-    """
     d = df.copy()
 
     d["Date"] = pd.to_datetime(d["Date"])
@@ -905,9 +970,7 @@ def _compute_mom_stats(df, entity_col, value_col="Value", months_window=6, cap_p
         cur = piv[cols[i]]
         valid = prev >= thresh
 
-       
         mom = pd.Series(np.nan, index=piv.index, dtype="float64")
-
         mom.loc[valid] = ((cur.loc[valid] - prev.loc[valid]) / prev.loc[valid]) * 100.0
         mom = mom.clip(lower=-cap_pct, upper=cap_pct)
         mom_list.append(mom.rename(cols[i]))
@@ -935,17 +998,11 @@ def _compute_mom_stats(df, entity_col, value_col="Value", months_window=6, cap_p
 
     return out
 
-
-# Compute stats
 item_stats = _compute_mom_stats(items_df, entity_col="Series", value_col="Value", months_window=6, cap_pct=300)
 cust_stats = _compute_mom_stats(customers_df, entity_col="Series", value_col="Value", months_window=6, cap_pct=300)
 
-# Layout (2x2)
 c1, c2 = st.columns(2)
 
-# -------------------------
-# Items With Rising Momentum
-# -------------------------
 with c1:
     st.subheader("Items With Rising Momentum")
     st.caption("💡 Months with Sales Increase: in the selected window (3/6/12 months), how many times did the item go up compared to the previous month.")
@@ -953,7 +1010,7 @@ with c1:
     months_window = st.radio(
         "Select time window",
         options=[3, 6, 12],
-        index=2,  # default 12
+        index=2,
         horizontal=True,
         key="items_rising_window"
     )
@@ -965,14 +1022,12 @@ with c1:
     start_month = (last_month - pd.DateOffset(months=months_window - 1)).replace(day=1)
     d = d[d["Date"] >= start_month]
 
-    # Monthly totals per item
     m = (
         d.groupby(["Series", "Date"], as_index=False)["Value"]
         .sum()
         .sort_values(["Series", "Date"])
     )
 
-    # Count months where sales increased vs previous month
     def count_growth(g):
         return int((g["Value"].diff() > 0).sum())
 
@@ -987,7 +1042,6 @@ with c1:
         .head(10)
     )
 
-    
     plot_df = top_items.sort_values("Growth_Months", ascending=True)
 
     fig = px.bar(
@@ -1018,9 +1072,6 @@ with c1:
 
     st.plotly_chart(fig, use_container_width=True)
 
-# -------------------------
-# Customer Sales Growth Trends
-# -------------------------
 with c2:
     st.subheader("Customer Sales Growth Trends")
     st.caption("💡 Customers categorized by improving or declining sales patterns over time.")
@@ -1066,7 +1117,8 @@ with c2:
 
     cs["Trend"] = cs["Avg_Change"].apply(trend_label)
 
-    cs = cs[cs["Trend"] != "Stable"]
+   
+    cs = cs[(cs["Trend"] != "Stable") & (cs["Series"] != "0")]
 
     improving = cs[cs["Trend"] == "Improving"].sort_values("Avg_Change", ascending=False).head(6)
     declining = cs[cs["Trend"] == "Declining"].sort_values("Avg_Change").head(6)
@@ -1112,8 +1164,9 @@ with c2:
 
     st.plotly_chart(fig, use_container_width=True)
 
+
 # =========================
-# Item Sales Distribution 
+# Item Sales Distribution
 # =========================
 st.markdown("---")
 st.header("Item Sales Distribution (Histogram + Bell Curve)")
@@ -1122,7 +1175,6 @@ st.caption(
     "Includes mean and median."
 )
 
-# --- Year select ---
 items_df["Year"] = items_df["Date"].dt.year
 available_years = sorted(items_df["Year"].dropna().unique().tolist())
 
@@ -1132,7 +1184,6 @@ selected_year = st.selectbox(
     index=len(available_years) - 1 if available_years else 0,
     key="hist_bell_year"
 )
-
 
 d = items_df[
     (items_df["Year"] == selected_year) &
@@ -1157,7 +1208,6 @@ vals = item_avg["AvgMonthlySales"].dropna().astype(float).values
 if len(vals) < 3:
     st.warning("Not enough data to plot distribution for this year.")
 else:
-    import numpy as np
     import plotly.graph_objects as go
 
     bins = 15
@@ -1176,7 +1226,6 @@ else:
 
     fig = go.Figure()
 
-    # Histogram
     fig.add_trace(
         go.Bar(
             x=bin_centers,
@@ -1189,7 +1238,6 @@ else:
         )
     )
 
-    # Bell curve
     fig.add_trace(
         go.Scatter(
             x=x,
@@ -1200,7 +1248,6 @@ else:
         )
     )
 
-    # Mean & Median lines
     fig.add_vline(x=mu, line_dash="dash", annotation_text="Mean", annotation_position="top")
     fig.add_vline(x=median, line_dash="dot", annotation_text="Median", annotation_position="top")
 
@@ -1214,9 +1261,6 @@ else:
 
     st.plotly_chart(fig, use_container_width=True)
 
-# -------------------------
-# Tables (Top / Bottom)
-# -------------------------
 item_avg["AvgMonthlySales"] = item_avg["AvgMonthlySales"].round(0).astype(int)
 
 c1, c2 = st.columns(2)
@@ -1228,7 +1272,7 @@ with c1:
         .head(10)
         .reset_index(drop=True)
     )
-    top10.index = top10.index + 1  # start from 1
+    top10.index = top10.index + 1
     st.dataframe(top10, use_container_width=True)
 
 with c2:
@@ -1238,16 +1282,13 @@ with c2:
         .head(10)
         .reset_index(drop=True)
     )
-    bottom10.index = bottom10.index + 1  # start from 1
+    bottom10.index = bottom10.index + 1
     st.dataframe(bottom10, use_container_width=True)
 
-# -------------------------
-# Summary metrics
-# -------------------------
 st.markdown("### 📊 Distribution Summary")
 
 total_items = len(item_avg)
-high_seller_threshold = 100_000  # MYR per month
+high_seller_threshold = 100_000
 high_sellers = (item_avg["AvgMonthlySales"] >= high_seller_threshold).sum()
 
 c1, c2, c3, c4 = st.columns(4)
