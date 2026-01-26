@@ -561,8 +561,8 @@ else:
 # ======================================================
 # Sales per Retails (RTL)
 # ======================================================
-st.header("Sales per Retails")
-st.caption("💡 Monthly sales trend for major retailers based on RTL sheet.")
+st.header("Sales per Retail")
+st.caption("💡 Monthly sales trend for major retailers.")
 
 import openpyxl
 import pandas as pd
