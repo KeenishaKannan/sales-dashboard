@@ -77,12 +77,27 @@ def build_long_format(raw_df, sheet_name):
         if not series:
             continue
 
+        # 🔥 FIX — remove TOTAL rows (any language, any hidden chars)
+        series_clean = series.lower().replace(" ", "")
+        if ("total" in series_clean) or ("総計" in series_clean) or ("合計" in series_clean):
+            continue
+
         for c, d in col_dates.items():
             val = pd.to_numeric(data.iat[r, c], errors="coerce")
             if pd.notna(val):
                 records.append((series, d, round(float(val))))
 
     return pd.DataFrame(records, columns=["Series", "Date", "Value"]), None
+
+
+def standardize_tidy_amount(df: pd.DataFrame) -> pd.DataFrame:
+    d = df.copy()
+    if "Amount" not in d.columns and "Amount (MY)" in d.columns:
+        d["Amount"] = pd.to_numeric(d["Amount (MY)"], errors="coerce")
+    else:
+        if "Amount" in d.columns:
+            d["Amount"] = pd.to_numeric(d["Amount"], errors="coerce")
+    return d
 
 # =========================
 # Load Excel
@@ -94,7 +109,6 @@ if not Path(EXCEL_FILE).exists():
 xls = pd.ExcelFile(EXCEL_FILE)
 sheet_names = xls.sheet_names
 
-# Fixed sheets 
 items_sheet = "ITEMS"
 customers_sheet = "CUSTOMERS"
 
@@ -103,7 +117,6 @@ raw_customers = pd.read_excel(EXCEL_FILE, sheet_name=customers_sheet, header=Non
 
 items_df, _ = build_long_format(raw_items, items_sheet)
 customers_df, _ = build_long_format(raw_customers, customers_sheet)
-
 
 # =========================
 # Overall Trend
