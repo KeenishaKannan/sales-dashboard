@@ -77,7 +77,7 @@ def build_long_format(raw_df, sheet_name):
         if not series:
             continue
 
-        # 🔥 FIX — remove TOTAL rows (any language, any hidden chars)
+        
         series_clean = series.lower().replace(" ", "")
         if ("total" in series_clean) or ("総計" in series_clean) or ("合計" in series_clean):
             continue
@@ -126,49 +126,52 @@ st.header("Overall Monthly Sales Trends")
 
 c_items, c_customers = st.columns(2)
 
-# =========================
-# Overall Trend
-# =========================
-st.markdown("---")
-st.header("Overall Monthly Sales Trends")
-
-c_items, c_customers = st.columns(2)
-
 # -------- Items --------
 with c_items:
     st.subheader("Trend Analysis of Items Based on Sales Amount")
-    st.caption("💡 Shows the total monthly sales amount (MYR) based ONLY on the Pivot Table TOTAL row.")
+    st.caption("💡 Shows the total monthly sales amount (MYR) summed across all items to track overall sales performance over time.")
 
-    # --- FIX: Extract TOTAL row directly ---
-    raw_items_total = raw_items[raw_items.apply(lambda row: row.astype(str).str.contains("総計|合計|TOTAL", case=False, regex=True).any(), axis=1)]
+   
+    header_row, year_row = find_header_rows(raw_items)
 
-    if not raw_items_total.empty:
-        total_row = raw_items_total.iloc[0]
-        months = raw_items.iloc[find_header_rows(raw_items)[0]]
-        years = raw_items.iloc[find_header_rows(raw_items)[1]]
+    months = raw_items.iloc[header_row]
+    years = raw_items.iloc[year_row] if year_row is not None else [""] * len(months)
 
-        # forward-fill years
-        year_ff, cur_y = [], None
-        for y in years:
-            yi = to_int(y)
-            if yi:
-                cur_y = yi
-            year_ff.append(cur_y)
+    year_ff, current_year = [], None
+    for y in years:
+        yi = to_int(y)
+        if yi:
+            current_year = yi
+        year_ff.append(current_year)
 
-        # build Monthly Total series
-        dates, values = [], []
-        for idx in range(len(months)):
-            m, y = to_int(months[idx]), year_ff[idx]
-            if m and y:
-                d = pd.Timestamp(year=y, month=m, day=1)
-                v = pd.to_numeric(total_row[idx], errors="coerce")
-                if pd.notna(v):
-                    dates.append(d)
-                    values.append(float(v))
+    col_dates = {}
+    for idx in range(len(months)):
+        m, y = to_int(months[idx]), year_ff[idx]
+        if m and y:
+            col_dates[idx] = pd.Timestamp(year=y, month=m, day=1)
 
-        items_total = pd.DataFrame({"Date": dates, "Value": values})
-    else:
-        items_total = items_df.groupby("Date")["Value"].sum().reset_index()
+    # find the "総計" row (Grand Total) in the first few columns
+    total_row = None
+    for r in range(len(raw_items)):
+        for c in range(min(5, raw_items.shape[1])):
+            v = raw_items.iat[r, c]
+            if isinstance(v, str) and ("総計" in v.strip() or v.strip().lower() == "total"):
+                total_row = r
+                break
+        if total_row is not None:
+            break
+
+    records = []
+    if total_row is not None:
+        for c, dte in col_dates.items():
+            v = raw_items.iat[total_row, c]
+            if isinstance(v, str):
+                v = v.replace(",", "")
+            num = pd.to_numeric(v, errors="coerce")
+            if pd.notna(num):
+                records.append((dte, float(num)))
+
+    items_total = pd.DataFrame(records, columns=["Date", "Value"]).sort_values("Date")
 
     fig_items = px.line(
         items_total,
@@ -189,6 +192,7 @@ with c_items:
     )
 
     st.plotly_chart(fig_items, use_container_width=True)
+
 
 
 # -------- Customers --------
