@@ -126,14 +126,15 @@ st.header("Overall Monthly Sales Trends")
 
 c_items, c_customers = st.columns(2)
 
-# -------- Items --------
+# -------- ITEMS TOTAL --------
 with c_items:
     st.subheader("Trend Analysis of Items Based on Sales Amount")
-    st.caption("💡 Shows the total monthly sales amount (MYR) summed across all items to track overall sales performance over time.")
+    st.caption("💡 Shows the monthly TOTAL sales amount (MYR) exactly as recorded in the ITEMS sheet pivot table.")
 
-   
+    total_row_items = 55   
+    row_items = raw_items.iloc[total_row_items]
+
     header_row, year_row = find_header_rows(raw_items)
-
     months = raw_items.iloc[header_row]
     years = raw_items.iloc[year_row] if year_row is not None else [""] * len(months)
 
@@ -150,28 +151,16 @@ with c_items:
         if m and y:
             col_dates[idx] = pd.Timestamp(year=y, month=m, day=1)
 
-    # find the "総計" row (Grand Total) in the first few columns
-    total_row = None
-    for r in range(len(raw_items)):
-        for c in range(min(5, raw_items.shape[1])):
-            v = raw_items.iat[r, c]
-            if isinstance(v, str) and ("総計" in v.strip() or v.strip().lower() == "total"):
-                total_row = r
-                break
-        if total_row is not None:
-            break
+    items_records = []
+    for c, dte in col_dates.items():
+        v = row_items[c]
+        if isinstance(v, str):
+            v = v.replace(",", "")
+        num = pd.to_numeric(v, errors="coerce")
+        if pd.notna(num):
+            items_records.append((dte, float(num)))
 
-    records = []
-    if total_row is not None:
-        for c, dte in col_dates.items():
-            v = raw_items.iat[total_row, c]
-            if isinstance(v, str):
-                v = v.replace(",", "")
-            num = pd.to_numeric(v, errors="coerce")
-            if pd.notna(num):
-                records.append((dte, float(num)))
-
-    items_total = pd.DataFrame(records, columns=["Date", "Value"]).sort_values("Date")
+    items_total = pd.DataFrame(items_records, columns=["Date", "Value"]).sort_values("Date")
 
     fig_items = px.line(
         items_total,
@@ -180,28 +169,50 @@ with c_items:
         markers=True,
         labels={"Value": "Sales Amount (MYR)"}
     )
-
     fig_items.update_traces(
-        mode="lines+markers",
-        hovertemplate="%{x|%b %Y}<br>Sales=%{y:,.0f}<extra></extra>"
+    hovertemplate="%{x|%b %Y}<br>Sales Amount (MYR): %{y:,.0f}<extra></extra>"
     )
 
-    fig_items.update_layout(
-        template="plotly_white",
-        height=420
-    )
+    fig_items.update_layout(template="plotly_white", height=420)
 
     st.plotly_chart(fig_items, use_container_width=True)
 
 
-
-# -------- Customers --------
+# -------- CUSTOMERS TOTAL --------
 with c_customers:
     st.subheader("Trend Analysis of Customers Based on Items Sold")
-    st.caption("💡 Shows the total monthly quantity sold summed across all customers to track overall demand volume over time")
+    st.caption("💡 Shows the monthly TOTAL quantity sold exactly as recorded in the CUSTOMERS sheet pivot table.")
 
+    total_row_customers = 197  
+    row_customers = raw_customers.iloc[total_row_customers]
 
-    cust_total = customers_df.groupby("Date")["Value"].sum().reset_index()
+    header_row_c, year_row_c = find_header_rows(raw_customers)
+    months_c = raw_customers.iloc[header_row_c]
+    years_c = raw_customers.iloc[year_row_c] if year_row_c is not None else [""] * len(months_c)
+
+    year_ff_c, current_year_c = [], None
+    for y in years_c:
+        yi = to_int(y)
+        if yi:
+            current_year_c = yi
+        year_ff_c.append(current_year_c)
+
+    col_dates_c = {}
+    for idx in range(len(months_c)):
+        m, y = to_int(months_c[idx]), year_ff_c[idx]
+        if m and y:
+            col_dates_c[idx] = pd.Timestamp(year=y, month=m, day=1)
+
+    cust_records = []
+    for c, dte in col_dates_c.items():
+        v = row_customers[c]
+        if isinstance(v, str):
+            v = v.replace(",", "")
+        num = pd.to_numeric(v, errors="coerce")
+        if pd.notna(num):
+            cust_records.append((dte, float(num)))
+
+    cust_total = pd.DataFrame(cust_records, columns=["Date", "Value"]).sort_values("Date")
 
     fig_cust = px.line(
         cust_total,
@@ -210,18 +221,14 @@ with c_customers:
         markers=True,
         labels={"Value": "Quantity Sold"}
     )
-
     fig_cust.update_traces(
-        mode="lines+markers",
-        hovertemplate="%{x|%b %Y}<br>Quantity=%{y:,.0f}<extra></extra>"
+    hovertemplate="%{x|%b %Y}<br>Quantity Sold: %{y:,.0f}<extra></extra>"
     )
 
-    fig_cust.update_layout(
-        template="plotly_white",
-        height=420
-    )
+    fig_cust.update_layout(template="plotly_white", height=420)
 
     st.plotly_chart(fig_cust, use_container_width=True)
+
 
 # =========================
 # Year-to-Year Sales Comparison
@@ -229,13 +236,54 @@ with c_customers:
 st.markdown("---")
 st.header("Year-to-Year Sales Comparison")
 
+def extract_pivot_total_long(raw_df, total_row_1based, series_name="TOTAL"):
+    header_row, year_row = find_header_rows(raw_df)
+    if header_row is None:
+        return pd.DataFrame(columns=["Series", "Date", "Value"])
+
+    months = raw_df.iloc[header_row]
+    years = raw_df.iloc[year_row] if year_row is not None else [""] * len(months)
+
+    year_ff, current_year = [], None
+    for y in years:
+        yi = to_int(y)
+        if yi:
+            current_year = yi
+        year_ff.append(current_year)
+
+    col_dates = {}
+    for idx in range(len(months)):
+        m, y = to_int(months[idx]), year_ff[idx]
+        if m and y:
+            col_dates[idx] = pd.Timestamp(year=y, month=m, day=1)
+
+    r = total_row_1based - 1  # convert Excel row number to 0-based index
+    if r < 0 or r >= len(raw_df):
+        return pd.DataFrame(columns=["Series", "Date", "Value"])
+
+    records = []
+    for c, dte in col_dates.items():
+        v = raw_df.iat[r, c]
+        if isinstance(v, str):
+            v = v.replace(",", "")
+        num = pd.to_numeric(v, errors="coerce")
+        if pd.notna(num):
+            records.append((series_name, dte, float(num)))
+
+    out = pd.DataFrame(records, columns=["Series", "Date", "Value"])
+    return out.sort_values("Date")
+
 metric = st.radio(
     "Select metric",
     ["Sales Amount (MYR)", "Quantity Sold"],
     horizontal=True,
 )
 
-base_df = items_df if metric == "Sales Amount (MYR)" else customers_df
+# KEEP SAME UI/LOGIC: only change Quantity Sold data source to pivot TOTAL row (CUSTOMERS row 198)
+if metric == "Sales Amount (MYR)":
+    base_df = items_df
+else:
+    base_df = extract_pivot_total_long(raw_customers, total_row_1based=198, series_name="TOTAL")
 
 entity_label = "Item" if metric == "Sales Amount (MYR)" else "Customer"
 entities = sorted(base_df["Series"].unique())
@@ -309,7 +357,6 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
 
 # =========================
 # Pie Charts
