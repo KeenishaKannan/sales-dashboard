@@ -126,13 +126,49 @@ st.header("Overall Monthly Sales Trends")
 
 c_items, c_customers = st.columns(2)
 
+# =========================
+# Overall Trend
+# =========================
+st.markdown("---")
+st.header("Overall Monthly Sales Trends")
+
+c_items, c_customers = st.columns(2)
+
 # -------- Items --------
 with c_items:
     st.subheader("Trend Analysis of Items Based on Sales Amount")
-    st.caption("💡 Shows the total monthly sales amount (MYR) summed across all items to track overall sales performance over time.")
+    st.caption("💡 Shows the total monthly sales amount (MYR) based ONLY on the Pivot Table TOTAL row.")
 
+    # --- FIX: Extract TOTAL row directly ---
+    raw_items_total = raw_items[raw_items.apply(lambda row: row.astype(str).str.contains("総計|合計|TOTAL", case=False, regex=True).any(), axis=1)]
 
-    items_total = items_df.groupby("Date")["Value"].sum().reset_index()
+    if not raw_items_total.empty:
+        total_row = raw_items_total.iloc[0]
+        months = raw_items.iloc[find_header_rows(raw_items)[0]]
+        years = raw_items.iloc[find_header_rows(raw_items)[1]]
+
+        # forward-fill years
+        year_ff, cur_y = [], None
+        for y in years:
+            yi = to_int(y)
+            if yi:
+                cur_y = yi
+            year_ff.append(cur_y)
+
+        # build Monthly Total series
+        dates, values = [], []
+        for idx in range(len(months)):
+            m, y = to_int(months[idx]), year_ff[idx]
+            if m and y:
+                d = pd.Timestamp(year=y, month=m, day=1)
+                v = pd.to_numeric(total_row[idx], errors="coerce")
+                if pd.notna(v):
+                    dates.append(d)
+                    values.append(float(v))
+
+        items_total = pd.DataFrame({"Date": dates, "Value": values})
+    else:
+        items_total = items_df.groupby("Date")["Value"].sum().reset_index()
 
     fig_items = px.line(
         items_total,
@@ -153,6 +189,7 @@ with c_items:
     )
 
     st.plotly_chart(fig_items, use_container_width=True)
+
 
 # -------- Customers --------
 with c_customers:
