@@ -257,7 +257,7 @@ def extract_pivot_total_long(raw_df, total_row_1based, series_name="TOTAL"):
         if m and y:
             col_dates[idx] = pd.Timestamp(year=y, month=m, day=1)
 
-    r = total_row_1based - 1  # convert Excel row number to 0-based index
+    r = total_row_1based - 1
     if r < 0 or r >= len(raw_df):
         return pd.DataFrame(columns=["Series", "Date", "Value"])
 
@@ -273,17 +273,19 @@ def extract_pivot_total_long(raw_df, total_row_1based, series_name="TOTAL"):
     out = pd.DataFrame(records, columns=["Series", "Date", "Value"])
     return out.sort_values("Date")
 
+
 metric = st.radio(
     "Select metric",
     ["Sales Amount (MYR)", "Quantity Sold"],
     horizontal=True,
 )
 
-# KEEP SAME UI/LOGIC: only change Quantity Sold data source to pivot TOTAL row (CUSTOMERS row 198)
+# FIXED LOGIC — NOTHING ELSE CHANGED
 if metric == "Sales Amount (MYR)":
-    base_df = items_df
+    base_df = extract_pivot_total_long(raw_items, total_row_1based=56, series_name="TOTAL")
 else:
     base_df = extract_pivot_total_long(raw_customers, total_row_1based=198, series_name="TOTAL")
+
 
 entity_label = "Item" if metric == "Sales Amount (MYR)" else "Customer"
 entities = sorted(base_df["Series"].unique())
@@ -357,6 +359,7 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
 
 # =========================
 # Pie Charts
