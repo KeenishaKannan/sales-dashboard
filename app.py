@@ -257,7 +257,7 @@ def extract_pivot_total_long(raw_df, total_row_1based, series_name="TOTAL"):
         if m and y:
             col_dates[idx] = pd.Timestamp(year=y, month=m, day=1)
 
-    r = total_row_1based - 1
+    r = total_row_1based - 1  
     if r < 0 or r >= len(raw_df):
         return pd.DataFrame(columns=["Series", "Date", "Value"])
 
