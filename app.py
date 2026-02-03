@@ -280,7 +280,7 @@ metric = st.radio(
     horizontal=True,
 )
 
-# FIXED LOGIC — NOTHING ELSE CHANGED
+
 if metric == "Sales Amount (MYR)":
     base_df = extract_pivot_total_long(raw_items, total_row_1based=56, series_name="TOTAL")
 else:
