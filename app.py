@@ -7,7 +7,6 @@ import re
 
 st.set_page_config(page_title="CAL Sales Trend Analysis Dashboard", layout="wide")
 st.title("CAL Sales Trend Analysis Dashboard")
-st.caption("This dashboard was last updated on 3rd February at 12:30 PM, reflecting the most recent data available in Google Sheets.")
 
 EXCEL_FILE = "CAL Sales Data for Dashboard.xlsx"
 
@@ -171,10 +170,15 @@ with c_items:
         labels={"Value": "Sales Amount (MYR)"}
     )
     fig_items.update_traces(
-    hovertemplate="%{x|%b %Y}<br>Sales Amount (MYR): %{y:,.0f}<extra></extra>"
+        hovertemplate="%{x|%b %Y}<br>Sales Amount (MYR): %{y:,.0f}<extra></extra>"
     )
 
-    fig_items.update_layout(template="plotly_white", height=420)
+    
+    fig_items.update_layout(
+        template="plotly_white",
+        height=420,
+        yaxis=dict(rangemode="tozero")
+    )
 
     st.plotly_chart(fig_items, use_container_width=True)
 
@@ -223,10 +227,15 @@ with c_customers:
         labels={"Value": "Quantity Sold"}
     )
     fig_cust.update_traces(
-    hovertemplate="%{x|%b %Y}<br>Quantity Sold: %{y:,.0f}<extra></extra>"
+        hovertemplate="%{x|%b %Y}<br>Quantity Sold: %{y:,.0f}<extra></extra>"
     )
 
-    fig_cust.update_layout(template="plotly_white", height=420)
+   
+    fig_cust.update_layout(
+        template="plotly_white",
+        height=420,
+        yaxis=dict(rangemode="tozero")
+    )
 
     st.plotly_chart(fig_cust, use_container_width=True)
 
@@ -281,12 +290,10 @@ metric = st.radio(
     horizontal=True,
 )
 
-
 if metric == "Sales Amount (MYR)":
     base_df = extract_pivot_total_long(raw_items, total_row_1based=56, series_name="TOTAL")
 else:
     base_df = extract_pivot_total_long(raw_customers, total_row_1based=198, series_name="TOTAL")
-
 
 entity_label = "Item" if metric == "Sales Amount (MYR)" else "Customer"
 entities = sorted(base_df["Series"].unique())
@@ -354,12 +361,14 @@ fig.update_traces(
 fig.update_layout(
     template="plotly_white",
     xaxis=dict(categoryorder="array", categoryarray=month_order),
+    yaxis=dict(rangemode="tozero"),   
     yaxis_title=metric,
     hovermode="x unified",
     height=520
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
 
 
 # =========================
