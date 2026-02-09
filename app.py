@@ -7,7 +7,7 @@ import re
 
 st.set_page_config(page_title="CAL Sales Trend Analysis Dashboard", layout="wide")
 st.title("CAL Sales Trend Analysis Dashboard")
-st.caption("Last updated on 9th February 14:00pm.")
+st.caption("Last updated on 9th February 14:20pm.")
 
 
 EXCEL_FILE = "CAL Sales Data for Dashboard.xlsx"
@@ -792,6 +792,11 @@ st.markdown("---")
 
 col1, col2 = st.columns(2)
 
+
+segment_sheet = "SEGMENT"
+raw_segment__align = pd.read_excel(EXCEL_FILE, sheet_name=segment_sheet, header=None)
+segment_df__align, segment_err__align = build_long_format(raw_segment__align, segment_sheet)
+
 with col1:
     st.header("Sales Change by Month – Items")
     st.caption(
@@ -845,13 +850,23 @@ with col1:
         hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
     )
 
-    global_min_date = stack_items["Date"].min()
-    global_max_date = stack_items["Date"].max()
+  
+    items_min_date = stack_items["Date"].min()
+    items_max_date = stack_items["Date"].max()
+
+    if segment_df__align is not None and (not segment_df__align.empty):
+        seg_min_date = segment_df__align["Date"].min()
+        seg_max_date = segment_df__align["Date"].max()
+        global_min_date = min(items_min_date, seg_min_date)
+        global_max_date = max(items_max_date, seg_max_date)
+    else:
+        global_min_date = items_min_date
+        global_max_date = items_max_date
 
     fig_items.update_layout(
         height=520,
         legend_title_text="Group",
-        xaxis=dict(range=[global_min_date, global_max_date])
+        xaxis=dict(type="date", range=[global_min_date, global_max_date])
     )
 
     st.plotly_chart(fig_items, use_container_width=True)
@@ -922,7 +937,9 @@ with col2:
 
         fig_segment.update_xaxes(
             tickformat="%Y-%m",
-            tickangle=45
+            tickangle=45,
+            type="date",
+            range=[global_min_date, global_max_date]
         )
 
         fig_segment.update_traces(
@@ -935,8 +952,7 @@ with col2:
         fig_segment.update_layout(
             yaxis_tickformat=",",
             legend_title_text="Segment",
-            height=520,
-            xaxis=dict(range=[global_min_date, global_max_date])
+            height=520
         )
 
         st.plotly_chart(fig_segment, use_container_width=True)
