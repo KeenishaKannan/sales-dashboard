@@ -792,6 +792,23 @@ st.markdown("---")
 
 col1, col2 = st.columns(2)
 
+def slice_to_main_pivot(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keep only the first pivot block: from top down to the first '総計' / 'Grand Total' row.
+    This prevents accidentally reading other tables further down the sheet.
+    """
+    header_row, _ = find_header_rows(raw_df)
+    if header_row is None:
+        return raw_df
+
+    for r in range(header_row + 1, len(raw_df)):
+        cells = raw_df.iloc[r, :3].astype(str)
+        if cells.str.contains(r"総計|grand total|^total$", case=False, na=False).any():
+            return raw_df.iloc[: r + 1].copy()
+
+    return raw_df
+
+
 with col1:
     st.header("Sales Change by Month – Items")
     st.caption(
@@ -799,62 +816,70 @@ with col1:
         "to highlight which items are driving overall sales growth or decline."
     )
 
-    items_df = items_df[items_df["Series"].astype(str).str.strip().str.lower().ne("")]
-    items_df = items_df[items_df["Series"] != "0"]
-    items_df = items_df[~items_df["Series"].str.contains("^others ?0$", case=False)]
+   
+    raw_items_main = slice_to_main_pivot(raw_items)
+    items_df_fix, items_err = build_long_format(raw_items_main, "ITEMS")
 
-    top_items = (
-        items_df.groupby("Series")["Value"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(5)
-        .index
-    )
+    if items_df_fix is None:
+        st.error(items_err)
+    else:
+        items_df_fix["Date"] = pd.to_datetime(items_df_fix["Date"])
 
-    items_df["Group"] = items_df["Series"].where(
-        items_df["Series"].isin(top_items), "Others"
-    )
+        # clean + exclude junk
+        d = items_df_fix.copy()
+        d = d[d["Series"].astype(str).str.strip().str.lower().ne("")]
+        d = d[d["Series"] != "0"]
+        d = d[~d["Series"].str.contains("^others ?0$", case=False, na=False)]
 
-    stack_items = (
-        items_df.groupby(["Date", "Group"])["Value"]
-        .sum()
-        .reset_index()
-    )
+        
+        d_top_pool = d[d["Series"].astype(str).str.strip().str.lower() != "others"]
 
-    group_order = [g for g in top_items if g != "Others"] + ["Others"]
+        top_items = (
+            d_top_pool.groupby("Series")["Value"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(5)
+            .index
+        )
 
-    color_map = {
-        "Strawberry": "pink",
-        "Sweet Corn": "yellow",
-        "Tomato": "red",
-        "Daikon (Raddish)": "#26A69A",
-        "Others": "gray",
-    }
+        d["Group"] = d["Series"].where(d["Series"].isin(top_items), "Others")
 
-    fig_items = px.area(
-        stack_items,
-        x="Date",
-        y="Value",
-        color="Group",
-        labels={"Value": "Sales Amount (MYR)"},
-        category_orders={"Group": group_order},
-        color_discrete_map=color_map,
-    )
+        stack_items = (
+            d.groupby(["Date", "Group"], as_index=False)["Value"]
+            .sum()
+        )
 
-    fig_items.update_traces(
-        hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
-    )
+        group_order = list(top_items) + ["Others"]
 
-    fig_items.update_layout(
-        height=520,
-        legend_title_text="Group"
-    )
+        color_map = {
+            "Strawberry": "pink",
+            "Sweet Corn": "yellow",
+            "Tomato": "red",
+            "Daikon (Raddish)": "#26A69A",
+            "Others": "gray",
+        }
 
-    st.plotly_chart(fig_items, use_container_width=True)
+        fig_items = px.area(
+            stack_items,
+            x="Date",
+            y="Value",
+            color="Group",
+            labels={"Value": "Sales Amount (MYR)"},
+            category_orders={"Group": group_order},
+            color_discrete_map=color_map,
+        )
 
-# ======================================================
-# Sales by Customer Segment
-# ======================================================
+        # force same x-range as the dashboard’s real data window (Apr 2022–Dec 2025)
+        fig_items.update_xaxes(range=[pd.Timestamp("2022-04-01"), pd.Timestamp("2025-12-01")])
+
+        fig_items.update_traces(
+            hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
+        )
+
+        fig_items.update_layout(height=520, legend_title_text="Group")
+        st.plotly_chart(fig_items, use_container_width=True)
+
+
 with col2:
     st.header("Sales by Customer Segment")
     st.caption(
@@ -862,71 +887,31 @@ with col2:
         "highlighting each segment’s contribution to total sales over time."
     )
 
-    segment_sheet = "SEGMENT"
+  
+    raw_segment = pd.read_excel(EXCEL_FILE, sheet_name="SEGMENT", header=None)
+    raw_segment_main = slice_to_main_pivot(raw_segment)
+    segment_df_fix, segment_err = build_long_format(raw_segment_main, "SEGMENT")
 
-    raw_segment = pd.read_excel(
-        EXCEL_FILE,
-        sheet_name=segment_sheet,
-        header=None
-    )
-
-    segment_df, segment_err = build_long_format(raw_segment, segment_sheet)
-
-    if segment_df is None:
+    if segment_df_fix is None:
         st.error(segment_err)
     else:
+        segment_df_fix["Date"] = pd.to_datetime(segment_df_fix["Date"])
 
         def extract_segment(name):
-            name = name.upper()
+            name = str(name).upper()
             for seg in ["CAI", "DST", "HRC", "RTL", "OTH"]:
                 if seg in name:
                     return seg
             return "OTH"
 
-        segment_df["Segment"] = segment_df["Series"].apply(extract_segment)
+        segment_df_fix["Segment"] = segment_df_fix["Series"].apply(extract_segment)
 
         segment_monthly = (
-            segment_df
+            segment_df_fix
             .groupby(["Date", "Segment"], as_index=False)["Value"]
             .sum()
             .round(0)
         )
-
-        # -------------------------
-        # FIX: Reconcile SEGMENT totals to ITEMS totals per month
-        # (adds the monthly difference into OTH so stacked bars match ITEMS)
-        # -------------------------
-        items_monthly_total = (
-            items_df.groupby("Date", as_index=False)["Value"]
-            .sum()
-            .rename(columns={"Value": "ItemsTotal"})
-        )
-
-        segment_total = (
-            segment_monthly.groupby("Date", as_index=False)["Value"]
-            .sum()
-            .rename(columns={"Value": "SegmentTotal"})
-        )
-
-        recon = items_monthly_total.merge(segment_total, on="Date", how="left")
-        recon["SegmentTotal"] = recon["SegmentTotal"].fillna(0)
-        recon["DiffToAdd"] = (recon["ItemsTotal"] - recon["SegmentTotal"]).round(0)
-
-        recon = recon[recon["DiffToAdd"] != 0].copy()
-        if not recon.empty:
-            recon_rows = recon[["Date", "DiffToAdd"]].rename(columns={"DiffToAdd": "Value"})
-            recon_rows["Segment"] = "OTH"
-            segment_monthly = pd.concat([segment_monthly, recon_rows], ignore_index=True)
-
-            segment_monthly = (
-                segment_monthly
-                .groupby(["Date", "Segment"], as_index=False)["Value"]
-                .sum()
-                .round(0)
-            )
-        # -------------------------
-        # END FIX
-        # -------------------------
 
         segment_colors = {
             "CAI": "#E53935",
@@ -935,7 +920,6 @@ with col2:
             "RTL": "#26A69A",
             "OTH": "#9E9E9E"
         }
-
         segment_order = ["CAI", "DST", "HRC", "RTL", "OTH"]
 
         fig_segment = px.bar(
@@ -946,31 +930,23 @@ with col2:
             barmode="stack",
             color_discrete_map=segment_colors,
             category_orders={"Segment": segment_order},
-            labels={
-                "Value": "Sales (MYR)",
-                "Date": "Month"
-            }
+            labels={"Value": "Sales (MYR)", "Date": "Month"},
         )
 
+        # same x-range as items chart
         fig_segment.update_xaxes(
             tickformat="%Y-%m",
-            tickangle=45
+            tickangle=45,
+            range=[pd.Timestamp("2022-04-01"), pd.Timestamp("2025-12-01")]
         )
 
         fig_segment.update_traces(
-            hovertemplate=
-            "Month=%{x|%Y-%m}<br>"
-            "Segment=%{fullData.name}<br>"
-            "Sales=%{y:,.0f}<extra></extra>"
+            hovertemplate="Month=%{x|%Y-%m}<br>Segment=%{fullData.name}<br>Sales=%{y:,.0f}<extra></extra>"
         )
 
-        fig_segment.update_layout(
-            yaxis_tickformat=",",
-            legend_title_text="Segment",
-            height=520
-        )
-
+        fig_segment.update_layout(yaxis_tickformat=",", legend_title_text="Segment", height=520)
         st.plotly_chart(fig_segment, use_container_width=True)
+
 # =========================
 # Sales Change by Month – Items
 # Sales by Customer Segment
