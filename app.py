@@ -799,19 +799,17 @@ with col1:
         "to highlight which items are driving overall sales growth or decline."
     )
 
-  
-    items_df = items_df[items_df["Series"].astype(str).str.strip().str.lower().ne("")]   
-    items_df = items_df[items_df["Series"] != "0"]                                       
-    items_df = items_df[~items_df["Series"].str.contains("^others ?0$", case=False)]     
+    items_df = items_df[items_df["Series"].astype(str).str.strip().str.lower().ne("")]
+    items_df = items_df[items_df["Series"] != "0"]
+    items_df = items_df[~items_df["Series"].str.contains("^others ?0$", case=False)]
 
-    
     top_items = (
-    items_df.groupby("Series")["Value"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(5)
-        .index
-     )
+        items_df.groupby("Series")["Value"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(5)
+            .index
+    )
 
     items_df["Group"] = items_df["Series"].where(
         items_df["Series"].isin(top_items), "Others"
@@ -847,9 +845,13 @@ with col1:
         hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
     )
 
+    global_min_date = stack_items["Date"].min()
+    global_max_date = stack_items["Date"].max()
+
     fig_items.update_layout(
         height=520,
-        legend_title_text="Group"
+        legend_title_text="Group",
+        xaxis=dict(range=[global_min_date, global_max_date])
     )
 
     st.plotly_chart(fig_items, use_container_width=True)
@@ -895,11 +897,11 @@ with col2:
         )
 
         segment_colors = {
-            "CAI": "#E53935",   
-            "DST": "#90CAF9",   
-            "HRC": "#1E3A8A",   
-            "RTL": "#26A69A",   
-            "OTH": "#9E9E9E"    
+            "CAI": "#E53935",
+            "DST": "#90CAF9",
+            "HRC": "#1E3A8A",
+            "RTL": "#26A69A",
+            "OTH": "#9E9E9E"
         }
 
         segment_order = ["CAI", "DST", "HRC", "RTL", "OTH"]
@@ -933,7 +935,8 @@ with col2:
         fig_segment.update_layout(
             yaxis_tickformat=",",
             legend_title_text="Segment",
-            height=520
+            height=520,
+            xaxis=dict(range=[global_min_date, global_max_date])
         )
 
         st.plotly_chart(fig_segment, use_container_width=True)
