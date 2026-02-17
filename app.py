@@ -7,8 +7,7 @@ import re
 
 st.set_page_config(page_title="CAL Sales Trend Analysis Dashboard", layout="wide")
 st.title("CAL Sales Trend Analysis Dashboard")
-st.caption("Last updated on 12th February 11:18am.")
-st.caption("UNDER UPDATE!")
+st.caption("Last updated on 17th February 15:47pm.")
 
 EXCEL_FILE = "CAL Sales Data for Dashboard.xlsx"
 
