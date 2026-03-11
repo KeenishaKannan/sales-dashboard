@@ -7,7 +7,7 @@ import re
 
 st.set_page_config(page_title="CAL Sales Trend Analysis Dashboard", layout="wide")
 st.title("CAL Sales Trend Analysis Dashboard")
-st.caption("st.caption: Last updated on 11th March 15:42pm.")
+st.caption("Last updated on 11th March 15:42pm.")
 st.caption("Latest update: Updated January 2026 data")
 
 
