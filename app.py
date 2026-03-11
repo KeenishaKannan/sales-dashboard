@@ -43,6 +43,17 @@ def find_header_rows(df):
             return i, i - 1 if i > 0 else None
     return None, None
 
+def find_grand_total_row(df):
+    header_row, _ = find_header_rows(df)
+    if header_row is None:
+        return None
+
+    for r in range(header_row + 1, len(df)):
+        cells = df.iloc[r, :5].astype(str)
+        if cells.str.contains(r"総計|grand total|^total$", case=False, na=False).any():
+            return r
+    return None
+
 def build_long_format(raw_df, sheet_name):
     header_row, year_row = find_header_rows(raw_df)
     if header_row is None:
@@ -81,7 +92,6 @@ def build_long_format(raw_df, sheet_name):
 
         series_clean = series.lower().replace(" ", "")
 
-       
         if ("total" in series_clean):
             continue
 
@@ -121,6 +131,12 @@ raw_customers = pd.read_excel(EXCEL_FILE, sheet_name=customers_sheet, header=Non
 items_df, _ = build_long_format(raw_items, items_sheet)
 customers_df, _ = build_long_format(raw_customers, customers_sheet)
 
+items_df["Date"] = pd.to_datetime(items_df["Date"])
+customers_df["Date"] = pd.to_datetime(customers_df["Date"])
+
+dashboard_start_date = min(items_df["Date"].min(), customers_df["Date"].min())
+dashboard_end_date = max(items_df["Date"].max(), customers_df["Date"].max())
+
 # =========================
 # Overall Trend
 # =========================
@@ -134,56 +150,58 @@ with c_items:
     st.subheader("Trend Analysis of Items Based on Sales Amount")
     st.caption("💡 Shows the monthly TOTAL sales amount (MYR) exactly as recorded in the ITEMS sheet pivot table.")
 
-    total_row_items = 55   
-    row_items = raw_items.iloc[total_row_items]
+    total_row_items = find_grand_total_row(raw_items)
+    if total_row_items is None:
+        st.error("Could not locate the grand total row in the ITEMS sheet.")
+    else:
+        row_items = raw_items.iloc[total_row_items]
 
-    header_row, year_row = find_header_rows(raw_items)
-    months = raw_items.iloc[header_row]
-    years = raw_items.iloc[year_row] if year_row is not None else [""] * len(months)
+        header_row, year_row = find_header_rows(raw_items)
+        months = raw_items.iloc[header_row]
+        years = raw_items.iloc[year_row] if year_row is not None else [""] * len(months)
 
-    year_ff, current_year = [], None
-    for y in years:
-        yi = to_int(y)
-        if yi:
-            current_year = yi
-        year_ff.append(current_year)
+        year_ff, current_year = [], None
+        for y in years:
+            yi = to_int(y)
+            if yi:
+                current_year = yi
+            year_ff.append(current_year)
 
-    col_dates = {}
-    for idx in range(len(months)):
-        m, y = to_int(months[idx]), year_ff[idx]
-        if m and y:
-            col_dates[idx] = pd.Timestamp(year=y, month=m, day=1)
+        col_dates = {}
+        for idx in range(len(months)):
+            m, y = to_int(months[idx]), year_ff[idx]
+            if m and y:
+                col_dates[idx] = pd.Timestamp(year=y, month=m, day=1)
 
-    items_records = []
-    for c, dte in col_dates.items():
-        v = row_items[c]
-        if isinstance(v, str):
-            v = v.replace(",", "")
-        num = pd.to_numeric(v, errors="coerce")
-        if pd.notna(num):
-            items_records.append((dte, float(num)))
+        items_records = []
+        for c, dte in col_dates.items():
+            v = row_items[c]
+            if isinstance(v, str):
+                v = v.replace(",", "")
+            num = pd.to_numeric(v, errors="coerce")
+            if pd.notna(num):
+                items_records.append((dte, float(num)))
 
-    items_total = pd.DataFrame(items_records, columns=["Date", "Value"]).sort_values("Date")
+        items_total = pd.DataFrame(items_records, columns=["Date", "Value"]).sort_values("Date")
 
-    fig_items = px.line(
-        items_total,
-        x="Date",
-        y="Value",
-        markers=True,
-        labels={"Value": "Sales Amount (MYR)"}
-    )
-    fig_items.update_traces(
-        hovertemplate="%{x|%b %Y}<br>Sales Amount (MYR): %{y:,.0f}<extra></extra>"
-    )
+        fig_items = px.line(
+            items_total,
+            x="Date",
+            y="Value",
+            markers=True,
+            labels={"Value": "Sales Amount (MYR)"}
+        )
+        fig_items.update_traces(
+            hovertemplate="%{x|%b %Y}<br>Sales Amount (MYR): %{y:,.0f}<extra></extra>"
+        )
 
-    
-    fig_items.update_layout(
-        template="plotly_white",
-        height=420,
-        yaxis=dict(rangemode="tozero")
-    )
+        fig_items.update_layout(
+            template="plotly_white",
+            height=420,
+            yaxis=dict(rangemode="tozero")
+        )
 
-    st.plotly_chart(fig_items, use_container_width=True)
+        st.plotly_chart(fig_items, use_container_width=True)
 
 
 # -------- CUSTOMERS TOTAL --------
@@ -191,56 +209,58 @@ with c_customers:
     st.subheader("Trend Analysis of Customers Based on Items Sold")
     st.caption("💡 Shows the monthly TOTAL quantity sold exactly as recorded in the CUSTOMERS sheet pivot table.")
 
-    total_row_customers = 197  
-    row_customers = raw_customers.iloc[total_row_customers]
+    total_row_customers = find_grand_total_row(raw_customers)
+    if total_row_customers is None:
+        st.error("Could not locate the grand total row in the CUSTOMERS sheet.")
+    else:
+        row_customers = raw_customers.iloc[total_row_customers]
 
-    header_row_c, year_row_c = find_header_rows(raw_customers)
-    months_c = raw_customers.iloc[header_row_c]
-    years_c = raw_customers.iloc[year_row_c] if year_row_c is not None else [""] * len(months_c)
+        header_row_c, year_row_c = find_header_rows(raw_customers)
+        months_c = raw_customers.iloc[header_row_c]
+        years_c = raw_customers.iloc[year_row_c] if year_row_c is not None else [""] * len(months_c)
 
-    year_ff_c, current_year_c = [], None
-    for y in years_c:
-        yi = to_int(y)
-        if yi:
-            current_year_c = yi
-        year_ff_c.append(current_year_c)
+        year_ff_c, current_year_c = [], None
+        for y in years_c:
+            yi = to_int(y)
+            if yi:
+                current_year_c = yi
+            year_ff_c.append(current_year_c)
 
-    col_dates_c = {}
-    for idx in range(len(months_c)):
-        m, y = to_int(months_c[idx]), year_ff_c[idx]
-        if m and y:
-            col_dates_c[idx] = pd.Timestamp(year=y, month=m, day=1)
+        col_dates_c = {}
+        for idx in range(len(months_c)):
+            m, y = to_int(months_c[idx]), year_ff_c[idx]
+            if m and y:
+                col_dates_c[idx] = pd.Timestamp(year=y, month=m, day=1)
 
-    cust_records = []
-    for c, dte in col_dates_c.items():
-        v = row_customers[c]
-        if isinstance(v, str):
-            v = v.replace(",", "")
-        num = pd.to_numeric(v, errors="coerce")
-        if pd.notna(num):
-            cust_records.append((dte, float(num)))
+        cust_records = []
+        for c, dte in col_dates_c.items():
+            v = row_customers[c]
+            if isinstance(v, str):
+                v = v.replace(",", "")
+            num = pd.to_numeric(v, errors="coerce")
+            if pd.notna(num):
+                cust_records.append((dte, float(num)))
 
-    cust_total = pd.DataFrame(cust_records, columns=["Date", "Value"]).sort_values("Date")
+        cust_total = pd.DataFrame(cust_records, columns=["Date", "Value"]).sort_values("Date")
 
-    fig_cust = px.line(
-        cust_total,
-        x="Date",
-        y="Value",
-        markers=True,
-        labels={"Value": "Quantity Sold"}
-    )
-    fig_cust.update_traces(
-        hovertemplate="%{x|%b %Y}<br>Quantity Sold: %{y:,.0f}<extra></extra>"
-    )
+        fig_cust = px.line(
+            cust_total,
+            x="Date",
+            y="Value",
+            markers=True,
+            labels={"Value": "Quantity Sold"}
+        )
+        fig_cust.update_traces(
+            hovertemplate="%{x|%b %Y}<br>Quantity Sold: %{y:,.0f}<extra></extra>"
+        )
 
-   
-    fig_cust.update_layout(
-        template="plotly_white",
-        height=420,
-        yaxis=dict(rangemode="tozero")
-    )
+        fig_cust.update_layout(
+            template="plotly_white",
+            height=420,
+            yaxis=dict(rangemode="tozero")
+        )
 
-    st.plotly_chart(fig_cust, use_container_width=True)
+        st.plotly_chart(fig_cust, use_container_width=True)
 
 
 # =========================
@@ -249,9 +269,13 @@ with c_customers:
 st.markdown("---")
 st.header("Year-to-Year Sales Comparison")
 
-def extract_pivot_total_long(raw_df, total_row_1based, series_name="TOTAL"):
+def extract_pivot_total_long(raw_df, series_name="TOTAL"):
     header_row, year_row = find_header_rows(raw_df)
     if header_row is None:
+        return pd.DataFrame(columns=["Series", "Date", "Value"])
+
+    total_row = find_grand_total_row(raw_df)
+    if total_row is None:
         return pd.DataFrame(columns=["Series", "Date", "Value"])
 
     months = raw_df.iloc[header_row]
@@ -270,13 +294,9 @@ def extract_pivot_total_long(raw_df, total_row_1based, series_name="TOTAL"):
         if m and y:
             col_dates[idx] = pd.Timestamp(year=y, month=m, day=1)
 
-    r = total_row_1based - 1  
-    if r < 0 or r >= len(raw_df):
-        return pd.DataFrame(columns=["Series", "Date", "Value"])
-
     records = []
     for c, dte in col_dates.items():
-        v = raw_df.iat[r, c]
+        v = raw_df.iat[total_row, c]
         if isinstance(v, str):
             v = v.replace(",", "")
         num = pd.to_numeric(v, errors="coerce")
@@ -294,9 +314,9 @@ metric = st.radio(
 )
 
 if metric == "Sales Amount (MYR)":
-    base_df = extract_pivot_total_long(raw_items, total_row_1based=56, series_name="TOTAL")
+    base_df = extract_pivot_total_long(raw_items, series_name="TOTAL")
 else:
-    base_df = extract_pivot_total_long(raw_customers, total_row_1based=198, series_name="TOTAL")
+    base_df = extract_pivot_total_long(raw_customers, series_name="TOTAL")
 
 entity_label = "Item" if metric == "Sales Amount (MYR)" else "Customer"
 entities = sorted(base_df["Series"].unique())
@@ -364,7 +384,7 @@ fig.update_traces(
 fig.update_layout(
     template="plotly_white",
     xaxis=dict(categoryorder="array", categoryarray=month_order),
-    yaxis=dict(rangemode="tozero"),   
+    yaxis=dict(rangemode="tozero"),
     yaxis_title=metric,
     hovermode="x unified",
     height=520
@@ -426,36 +446,31 @@ c1, c2 = st.columns(2)
 with c1:
     st.subheader("Sales Based on Items (MYR)")
 
-    
     items_m = items_df[items_df["Date"].dt.to_period("M") == selected_month].copy()
     items_m["Series"] = items_m["Series"].astype(str).str.strip()
 
-    
     items_m = items_m[
         (items_m["Series"] != "") &
         (~items_m["Series"].str.fullmatch(r"0|0\.0|0\.00")) &
         (~items_m["Series"].str.fullmatch(r"\d+(\.\d+)?"))
     ].reset_index(drop=True)
 
-    
     items_pie = (
         items_m.groupby("Series", as_index=False)["Value"]
         .sum()
-        .sort_values("Value", ascending=False)   
+        .sort_values("Value", ascending=False)
         .reset_index(drop=True)
     )
 
-    
     if len(items_pie) > TOP_N_ITEMS:
         top = items_pie.iloc[:TOP_N_ITEMS].copy()
         others_val = items_pie.iloc[TOP_N_ITEMS:]["Value"].sum()
         others_row = pd.DataFrame([{"Series": "Others", "Value": others_val}])
         items_pie = pd.concat([top, others_row], ignore_index=True)
 
-   
     item_colors = {
-        "Strawberry": "pink",       
-        "Tomato": "red",            
+        "Strawberry": "pink",
+        "Tomato": "red",
         "Sweet Corn": "yellow",
         "Daikon (Raddish)": "#26A69A",
         "Spinach": "#4CAF50",
@@ -467,9 +482,6 @@ with c1:
         "Others": "gray"
     }
 
-    # -------------------------
-    # Pie chart
-    # -------------------------
     fig_items_pie = px.pie(
         items_pie,
         names="Series",
@@ -479,8 +491,8 @@ with c1:
     )
 
     fig_items_pie.update_traces(
-        direction="clockwise",          
-        sort=False,                     
+        direction="clockwise",
+        sort=False,
         rotation=0,
         textinfo="percent",
         textposition="inside",
@@ -685,7 +697,6 @@ def load_rtl_long(excel_file: str) -> pd.DataFrame:
     year_cols = []
     max_col = ws.max_column
 
-   
     for c in range(1, max_col + 1):
         v = ws.cell(YEAR_ROW, c).value
         if isinstance(v, (int, float)) and int(v) == v and 2000 <= int(v) <= 2100:
@@ -694,7 +705,6 @@ def load_rtl_long(excel_file: str) -> pd.DataFrame:
     if not year_cols:
         return pd.DataFrame(columns=["Date", "Retail", "Value"])
 
-    
     col_to_date = {}
     for i, (start_c, year_val) in enumerate(year_cols):
         end_c = (year_cols[i + 1][0] - 1) if i + 1 < len(year_cols) else max_col
@@ -707,7 +717,6 @@ def load_rtl_long(excel_file: str) -> pd.DataFrame:
     if not col_to_date:
         return pd.DataFrame(columns=["Date", "Retail", "Value"])
 
-   
     rows = []
     for r in range(FIRST_DATA_ROW, ws.max_row + 1):
         retail = ws.cell(r, CUSTOMER_COL).value
@@ -716,7 +725,6 @@ def load_rtl_long(excel_file: str) -> pd.DataFrame:
 
         retail = str(retail).strip()
 
-        
         if re.fullmatch(r"\d+(\.\d+)?", retail):
             continue
 
@@ -755,13 +763,12 @@ else:
     top_retails = totals.sort_values("Value", ascending=False).head(top_n)["Retail"].tolist()
     rtl_plot = rtl_long[rtl_long["Retail"].isin(top_retails)].copy()
 
-   
     fig_rtl = px.line(
         rtl_plot,
         x="Date",
         y="Value",
         color="Retail",
-        markers=True, 
+        markers=True,
         labels={"Value": "Sales Amount (MYR)", "Date": "Month", "Retail": ""},
     )
 
@@ -815,7 +822,6 @@ with col1:
         "to highlight which items are driving overall sales growth or decline."
     )
 
-   
     raw_items_main = slice_to_main_pivot(raw_items)
     items_df_fix, items_err = build_long_format(raw_items_main, "ITEMS")
 
@@ -824,13 +830,11 @@ with col1:
     else:
         items_df_fix["Date"] = pd.to_datetime(items_df_fix["Date"])
 
-        # clean + exclude junk
         d = items_df_fix.copy()
         d = d[d["Series"].astype(str).str.strip().str.lower().ne("")]
         d = d[d["Series"] != "0"]
         d = d[~d["Series"].str.contains("^others ?0$", case=False, na=False)]
 
-        
         d_top_pool = d[d["Series"].astype(str).str.strip().str.lower() != "others"]
 
         top_items = (
@@ -868,8 +872,7 @@ with col1:
             color_discrete_map=color_map,
         )
 
-        # force same x-range as the dashboard’s real data window (Apr 2022–Dec 2025)
-        fig_items.update_xaxes(range=[pd.Timestamp("2022-04-01"), pd.Timestamp("2025-12-01")])
+        fig_items.update_xaxes(range=[dashboard_start_date, dashboard_end_date])
 
         fig_items.update_traces(
             hovertemplate="%{x|%b %Y}<br>%{y:,.0f}<extra></extra>"
@@ -886,7 +889,6 @@ with col2:
         "highlighting each segment’s contribution to total sales over time."
     )
 
-  
     raw_segment = pd.read_excel(EXCEL_FILE, sheet_name="SEGMENT", header=None)
     raw_segment_main = slice_to_main_pivot(raw_segment)
     segment_df_fix, segment_err = build_long_format(raw_segment_main, "SEGMENT")
@@ -932,11 +934,10 @@ with col2:
             labels={"Value": "Sales (MYR)", "Date": "Month"},
         )
 
-        # same x-range as items chart
         fig_segment.update_xaxes(
             tickformat="%Y-%m",
             tickangle=45,
-            range=[pd.Timestamp("2022-04-01"), pd.Timestamp("2025-12-01")]
+            range=[dashboard_start_date, dashboard_end_date]
         )
 
         fig_segment.update_traces(
@@ -996,14 +997,12 @@ with c_customers:
         "allowing comparison of purchasing patterns and demand consistency."
     )
 
-    
     customers_df["Series"] = (
         customers_df["Series"]
         .astype(str)
         .str.strip()
     )
 
-   
     customers = sorted(
         customers_df.loc[
             (customers_df["Series"] != "") &
@@ -1011,15 +1010,13 @@ with c_customers:
         ]["Series"].unique()
     )
 
-    
     selected_customers = st.multiselect(
         "Select customers",
         customers,
-        default=customers[:5],      
+        default=customers[:5],
         key="customers_trend_select"
     )
 
-   
     selected_customers = [
         c for c in selected_customers if c in customers
     ]
@@ -1229,7 +1226,6 @@ with c2:
 
     cs["Trend"] = cs["Avg_Change"].apply(trend_label)
 
-   
     cs = cs[(cs["Trend"] != "Stable") & (cs["Series"] != "0")]
 
     improving = cs[cs["Trend"] == "Improving"].sort_values("Avg_Change", ascending=False).head(6)
