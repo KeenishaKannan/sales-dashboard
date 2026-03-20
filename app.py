@@ -7,8 +7,6 @@ import numpy as np
 import openpyxl
 
 st.set_page_config(page_title="Sales Trend Analysis Dashboard", layout="wide")
-st.caption("Last updated on 20th March 19:38pm.")
-st.caption("Latest update: Updated CAI & CAI data")
 
 # =========================
 # Dataset Config
@@ -54,8 +52,8 @@ elif dataset == "CAI":
 else:
     st.title("CAT Sales Trend Analysis Dashboard")
 
-st.caption("Last updated on 11th March 15:42pm.")
-st.caption("Latest update: Updated January 2026 data")
+st.caption("Last updated on 20th March 19:38pm.")
+st.caption("Latest update: Updated CAI & CAI data")
 
 # =========================
 # Helpers
