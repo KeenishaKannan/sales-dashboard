@@ -25,8 +25,8 @@ TIDY_SHEET_MAP = {
     "CAT": "TIDY DATA",
 }
 
-# CAL = MYR (keep as-is)
-# CAI = SGD (keep as-is)
+# CAL = MYR (keep as it is)
+# CAI = SGD (keep as it is)
 # CAT = THB -> SGD
 FX_TO_DISPLAY = {
     "CAL": 1.0,
